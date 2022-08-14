@@ -1,0 +1,19 @@
+All in all, I did fairly well on this.
+
+The parts where I needed to consult a walkthrough were:
+1. To decode the vigenere ciphered poem in the beginning.
+
+2. To realize that the last "hash" in humptydumpty.txt was a hex string, not a
+sha256 hash.
+
+3. To get the idea to look at /home/alice a bit closer.
+
+4. To realize that I could cat /etc/sudoers.d/alice instead of running sudo -l
+
+5. To find out that I could use sudo -h to specify the host.
+
+I did "struggle" a bit with getting a more stable shell, so that is something I
+need to look more into. Although I knew what I wanted to do, I still needed
+to look up how to do it.
+
+But I did manage to do it without consulting a walkthrough.

