@@ -1,0 +1,75 @@
+Through ffuf we find that there is a /v2 directory which takes us to a login page
+where we can either login or register.
+
+We are able to register a user user@mail.com:password
+Now lets see what we can do.
+
+By poking around a little bit, we can see that on the profile page of our user,
+there is a submit file-functionality. However, it is noted that only admin@sky.thm
+have access to that feature. (Needed a little push from walkthrough on this one)
+
+I did see a page labelled "Reset user". On that, we are able to change password
+for our user. It has 3 fields, the username and two password fields (one for
+confirming the passwor). The username is greyed out.
+By inspecting the page in firefox, we can see that we can just remove the "inactive" attribute
+from that text field, and input admin@sky.thm:
+<input class="form-control" type="text" name="uname" value="user@mail.com" readonly="">
+
+to
+<input class="form-control" type="text" name="uname" value="user@mail.com">
+
+(alternatively, change "value" to admin@sky.thm)
+
+We are now able to submit admin@sky.thm, and a new password
+admin@sky.thm:password
+
+We didn't receive any confirmation that it succeeded, but we also didn't receive
+an error message. Lets try logging in with those credentials.
+
+Bingo bango, we are now logged in as admin@sky.thm. Let's poke around a bit
+and see what we can find. For one, we should be able to upload a profile picture.
+If I remember correctly, we could get a reverse shell via an image file somehow,
+like by bypassing php-file filtering.
+
+Let's see if we can upload an image, for starters.
+It didn't complain when I uploaded one of the AttackBox:s wallpapers,
+but the profile picture also didn't change. The page just reloaded when I clicked
+"Edit profile", basically.
+
+Let's just try to upload a reverse shell. We use the one from Seclists,
+and we also start a listener on our machine just in case it would execute.
+
+It didn't complain, just not sure where it did go. Let's try to figure that out.
+Let's return to ffuf and see if it reveals any useful directories.
+
+For the /-folder:
+.htpasswd               [Status: 403, Size: 277, Words: 20, Lines: 10]
+.htaccess               [Status: 403, Size: 277, Words: 20, Lines: 10]
+assets                  [Status: 301, Size: 313, Words: 20, Lines: 10]
+phpMyAdmin              [Status: 301, Size: 317, Words: 20, Lines: 10]
+server-status           [Status: 403, Size: 277, Words: 20, Lines: 10]
+v2                      [Status: 301, Size: 309, Words: 20, Lines: 10]
+
+For /v2/:
+admin                   [Status: 301, Size: 315, Words: 20, Lines: 10]
+
+For /v2/admin:
+Nothing.
+
+For /assets/:
+css                     [Status: 301, Size: 317, Words: 20, Lines: 10]
+img                     [Status: 301, Size: 317, Words: 20, Lines: 10]
+js                      [Status: 301, Size: 316, Words: 20, Lines: 10]
+
+For /assets/img/:
+background              [Status: 301, Size: 328, Words: 20, Lines: 10]
+
+Browsing to /assets/img/ in Firefox didn't give us much to work with, just the default
+pictures. Including the default profile pic. None of what we uploaded.
+All of them were .png, except the profile pic, which was .jpg.
+
+If we upload a jpg image (in this case I downloaded the default profile pic from
+/assets/img/) we are sent to a site with just the text: "Image saved.", and 
+immedietly sent back to the dashboard. This doesn't seem to happen with other
+filetypes. I should load up Burp at this point.
+
