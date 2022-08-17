@@ -1,0 +1,18 @@
+This challenge was quite fun. Since it was based on a real-world pentest, it
+didn't have a set path which a lot of CTFs have.
+
+I also manage to solve it pretty much by myself, except for realizing that
+the "Submit" button on the profile page could be used by admin@sky.thm. Once
+I got that hint, I got it pretty much on my own. And I feel like I could've gotten
+that by myself, given more patience. On the other steps I had patience, which
+paid off. It will be fun to look up other ways of passing the challenge.
+
+Lessons to take from this:
+* Use multiple wordlists when scanning for directories.
+* While manually looking around for privsec possibilities is fun, it might be
+  faster to run linpeas. It can stop me from going down the wrong rabbit hole
+  and save some time. I did spent 5 minutes looking into if I could connect to
+  the mysql-server.
+* Learn how to cross-compile between archs. If I'm on another arch than the
+  target, compiling exploits etc will be useful.
+

