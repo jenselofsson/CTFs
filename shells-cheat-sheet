@@ -1,0 +1,16 @@
+# Spawn a bash shell with python:
+################################################################################
+$ python3 -c 'import pty; pty.spawn("/bin/bash")
+
+# Make it stable:
+# stty -a on the local machine and find the variables
+# TERM, SHELL, and number of rows/cols
+
+# Ctrl-Z to bring it to the background
+$ stty raw -echo
+$ fg # Shell will look weird after this
+$ reset
+$ export SHELL=bash # Or whatever shell you use
+$ export TERM=screen-256color # Or the correct option
+$ stty rows 100 columns 200 # Input the values found by stty -a on local machine
+################################################################################
