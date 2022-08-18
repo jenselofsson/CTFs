@@ -1,2 +1,2 @@
 # Find files with the suid bit set:
-$ find / -perm /u=s,g=s 2>/dev/null
+$ find /usr/bin/ -perm /u=s,g=s -exec ls -lh {} \; 2>/dev/null
