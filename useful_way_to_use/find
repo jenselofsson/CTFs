@@ -1,0 +1,2 @@
+# Find files with the suid bit set:
+$ find / -perm /u=s,g=s 2>/dev/null
