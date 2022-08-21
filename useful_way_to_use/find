@@ -1,2 +1,8 @@
 # Find files with the suid bit set:
 $ find /usr/bin/ -perm /u=s,g=s -exec ls -lh {} \; 2>/dev/null
+
+# Find files owned by a group
+$ find / -group groupname -type -f -exec ls -lh {} \; 2>/dev/null
+
+# Find files owned by a user
+$ find / -user username -type f -exec ls -lh {} \; 2>/dev/null
