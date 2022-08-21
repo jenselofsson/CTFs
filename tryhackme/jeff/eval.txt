@@ -1,0 +1,17 @@
+This room was quite fun. It was listed as "hard" so I was a little bit worried
+if I would get anything out of it. The fact that you had to break out of a docker
+container was interesting.
+
+I did have to look up a few things in a walkthrough to get a hint of how to
+continue:
+
+1. To enumerate file-names, which is something I could have thought of myself.
+
+2. Enumerating the fact that I had to specify vhost when enumerating sub-domains.
+
+3. The exact function to use when creating a wordpress-reverse shell, but not the
+fact that I could use the plugins to create it.
+
+4. The idea that "tar *" was used on the host machine.
+
+5. To symlink the message.txt to jeff.bak
