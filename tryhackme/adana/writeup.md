@@ -16,6 +16,42 @@ and firefox cant find the site. Lets add adana.thm to the hosts file.
 
 That works better.
 
+Scanning it with ffuf reveals a few directories:
+```
+$ ffuf -u http://adana.thm/FUZZ -w /usr/share/seclists/Discovery/Web-Content/big.txt
+
+        /'___\  /'___\           /'___\
+       /\ \__/ /\ \__/  __  __  /\ \__/
+       \ \ ,__\\ \ ,__\/\ \/\ \ \ \ ,__\
+        \ \ \_/ \ \ \_/\ \ \_\ \ \ \ \_/
+         \ \_\   \ \_\  \ \____/  \ \_\
+          \/_/    \/_/   \/___/    \/_/
+
+       v1.5.0 Kali Exclusive <3
+________________________________________________
+
+ :: Method           : GET
+ :: URL              : http://adana.thm/FUZZ
+ :: Wordlist         : FUZZ: /usr/share/seclists/Discovery/Web-Content/big.txt
+ :: Follow redirects : false
+ :: Calibration      : false
+ :: Timeout          : 10
+ :: Threads          : 40
+ :: Matcher          : Response status: 200,204,301,302,307,401,403,405,500
+________________________________________________
+
+.htaccess               [Status: 403, Size: 274, Words: 20, Lines: 10, Duration: 4020ms]
+.htpasswd               [Status: 403, Size: 274, Words: 20, Lines: 10, Duration: 5126ms]
+announcements           [Status: 301, Size: 314, Words: 20, Lines: 10, Duration: 97ms]
+javascript              [Status: 301, Size: 311, Words: 20, Lines: 10, Duration: 157ms]
+phpmyadmin              [Status: 301, Size: 311, Words: 20, Lines: 10, Duration: 76ms]
+server-status           [Status: 403, Size: 274, Words: 20, Lines: 10, Duration: 86ms]
+wp-admin                [Status: 301, Size: 309, Words: 20, Lines: 10, Duration: 77ms]
+wp-content              [Status: 301, Size: 311, Words: 20, Lines: 10, Duration: 55ms]
+wp-includes             [Status: 301, Size: 312, Words: 20, Lines: 10, Duration: 70ms]
+:: Progress: [20476/20476] :: Job [1/1] :: 587 req/sec :: Duration: [0:00:52] :: Errors: 0 ::
+```
+
 If we go to http://adana.thm/announcements/, we can see two files:
 [IMG]	austrailian-bulldog-ant.jpg	2021-01-11 11:51 	58K
 [TXT]	wordlist.txt	2021-01-11 13:48 	394K
@@ -193,6 +229,9 @@ I'm starting to suspect this is the rabbit hole referenced in the room
 description.
 
 ## Back out of the rabbit hole?
+Let's refer back to one of the rooms questions:
+What is the name of the secret directory?
+
 So let's go back a few steps. I downloaded the JPG-file and the wordlist.txt
 using a webbrowser. I should look and see if they are the same as the ones
 accessible from the FTP server.
@@ -201,4 +240,162 @@ So lets repeat the steps from above.
 
 Nope, they are the same.
 
+We have some other opening:
+Try enumerating hidden directories (ie directories starting with a dot (.))
+See if there are any hidden directories on the ftp-server
+Enumerate subdomains.
+
 It's getting late, let's table this for another day.
+
+Circling back to the ftp-server. If we ```ls -la``` we find some additional
+interesting directories 
+```
+lftp hakanftp@adana.thm:/> ls -la
+drwxrwxrwx    8 1001     1001         4096 Jan 15  2021 .
+drwxrwxrwx    8 1001     1001         4096 Jan 15  2021 ..
+-rw-------    1 1001     1001           88 Jan 13  2021 .bash_history
+drwx------    2 1001     1001         4096 Jan 11  2021 .cache
+drwx------    3 1001     1001         4096 Jan 11  2021 .gnupg
+-rw-r--r--    1 1001     1001          554 Jan 10  2021 .htaccess
+drwxr-xr-x    2 0        0            4096 Jan 14  2021 announcements
+-rw-r--r--    1 1001     1001          405 Feb 06  2020 index.php
+-rw-r--r--    1 1001     1001        19915 Feb 12  2020 license.txt
+-rw-r--r--    1 1001     1001         7278 Jun 26  2020 readme.html
+-rw-r--r--    1 1001     1001         7101 Jul 28  2020 wp-activate.php
+drwxr-xr-x    9 1001     1001         4096 Dec 08  2020 wp-admin
+-rw-r--r--    1 1001     1001          351 Feb 06  2020 wp-blog-header.php
+-rw-r--r--    1 1001     1001         2328 Oct 08  2020 wp-comments-post.php
+-rw-r--r--    1 0        0            3194 Jan 11  2021 wp-config.php
+drwxr-xr-x    4 1001     1001         4096 Dec 08  2020 wp-content
+-rw-r--r--    1 1001     1001         3939 Jul 30  2020 wp-cron.php
+drwxr-xr-x   25 1001     1001        12288 Dec 08  2020 wp-includes
+-rw-r--r--    1 1001     1001         2496 Feb 06  2020 wp-links-opml.php
+-rw-r--r--    1 1001     1001         3300 Feb 06  2020 wp-load.php
+-rw-r--r--    1 1001     1001        49831 Nov 09  2020 wp-login.php
+-rw-r--r--    1 1001     1001         8509 Apr 14  2020 wp-mail.php
+-rw-r--r--    1 1001     1001        20975 Nov 12  2020 wp-settings.php
+-rw-r--r--    1 1001     1001        31337 Sep 30  2020 wp-signup.php
+-rw-r--r--    1 1001     1001         4747 Oct 08  2020 wp-trackback.php
+-rw-r--r--    1 1001     1001         3236 Jun 08  2020 xmlrpc.php
+```
+
+And we also find a .bash_history file.
+```
+lftp hakanftp@adana.thm:/> cat .bash_history
+id
+su root
+ls
+cd ..
+ls
+cd /home
+ls
+cd hakanbey/
+ls
+ls -la
+cd ..
+ls
+exit
+ls
+cd /
+ls
+exit
+```
+So we are in a home-directory, and it looks like someone else have been poking
+around. 
+
+Now I'm lost on how to continue, so I'll peek in one of the write-ups.
+It hints that having a more thorough look in the phpmyadmin database will show
+some leads.
+
+In the wp-options table in phpmyadmin1 we find that there is a line that reveals
+a subdomain:
+```
+1 	siteurl 	http://subdomain.adana.thm 	yes
+```
+
+The corresponding entry in the phpmyadmin database is:
+```
+1 	siteurl 	http://adana.thm 	yes
+```
+
+My current theory, without having investigated further, is that the files we are
+able to access via FTP are the ones that we can view via http://subdomain.adana.thm.
+
+## Finding the subdomain: enumeration
+We should be able to find this via sub-domain enumeration as well. This took a
+bit of playing around, but here is what I find.
+
+We can use ```ffuf``` for this:
+```
+$ ffuf -w /usr/share/seclists/Discovery/DNS/namelist.txt -H "Host: FUZZ.adana.thm" -u http://adana.thm
+        /'___\  /'___\           /'___\
+       /\ \__/ /\ \__/  __  __  /\ \__/
+       \ \ ,__\\ \ ,__\/\ \/\ \ \ \ ,__\
+        \ \ \_/ \ \ \_/\ \ \_\ \ \ \ \_/
+         \ \_\   \ \_\  \ \____/  \ \_\
+          \/_/    \/_/   \/___/    \/_/
+
+       v1.5.0 Kali Exclusive <3
+________________________________________________
+
+ :: Method           : GET
+ :: URL              : http://adana.thm
+ :: Wordlist         : FUZZ: /usr/share/seclists/Discovery/DNS/namelist.txt
+ :: Header           : Host: FUZZ.adana.thm
+ :: Follow redirects : false
+ :: Calibration      : false
+ :: Timeout          : 10
+ :: Threads          : 40
+ :: Matcher          : Response status: 200,204,301,302,307,401,403,405,500
+________________________________________________
+
+11                      [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 805ms]
+aac                     [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 806ms]
+17                      [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 806ms]
+aaapi                   [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 807ms]
+1                       [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 807ms]
+a2                      [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 806ms]
+a.auth-ns               [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 806ms]
+aaaowa                  [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 807ms]
+20                      [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 807ms]
+10                      [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 807ms]
+0                       [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 807ms]
+a1                      [Status: 200, Size: 10846, Words: 459, Lines: 141, Duration: 890ms]
+[WARN] Caught keyboard interrupt (Ctrl-C)
+```
+The issue here is quite obvious, that ffuf reports Status: 200 for every entry in
+the wordlist. There is a way to get around this, and it is to filter out the
+size 10846:
+```
+$ ffuf -w /usr/share/seclists/Discovery/Web-Content/big.txt -H "Host: FUZZ.adana.thm" -fs 10846 -u http://adana.thm
+
+        /'___\  /'___\           /'___\
+       /\ \__/ /\ \__/  __  __  /\ \__/
+       \ \ ,__\\ \ ,__\/\ \/\ \ \ \ ,__\
+        \ \ \_/ \ \ \_/\ \ \_\ \ \ \ \_/
+         \ \_\   \ \_\  \ \____/  \ \_\
+          \/_/    \/_/   \/___/    \/_/
+
+       v1.5.0 Kali Exclusive <3
+________________________________________________
+
+ :: Method           : GET
+ :: URL              : http://adana.thm
+ :: Wordlist         : FUZZ: /usr/share/seclists/Discovery/Web-Content/big.txt
+ :: Header           : Host: FUZZ.adana.thm
+ :: Follow redirects : false
+ :: Calibration      : false
+ :: Timeout          : 10
+ :: Threads          : 40
+ :: Matcher          : Response status: 200,204,301,302,307,401,403,405,500
+ :: Filter           : Response size: 10846
+________________________________________________
+
+subdomain               [Status: 200, Size: 11142, Words: 460, Lines: 140, Duration: 1236ms]
+www                     [Status: 301, Size: 0, Words: 1, Lines: 1, Duration: 508ms]
+:: Progress: [20476/20476] :: Job [1/1] :: 126 req/sec :: Duration: [0:06:01] :: Errors: 0 ::
+```
+We now find subdomains that does not match the size 10846.
+
+Although when we try to navigate to it, Firefox doesn't find the page, so lets
+add it to /etc/hosts.
