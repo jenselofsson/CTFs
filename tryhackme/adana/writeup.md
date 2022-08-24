@@ -601,16 +601,124 @@ $ cat wordlist.txt | awk '{print "123adana" $0}' > 123wordlist.txt
 
 And then we can go ahead and use ```sucrack``` to crack the password:
 ```
-www-data@ubuntu:/tmp$ sucrack -u hakanbey 123wordlist.txt
-```
-
-This took too long, so instead I used CVE-2021-4034 to become root, and then
-su:d into hakanbey.
-```
-www-data@ubuntu:/tmp/CVE-2021-4034-main$ ./cve-2021-4034
-# su hakanbey
-hakanbey@ubuntu:/tmp/CVE-2021-4034-main$
+www-data@ubuntu:/tmp$ sucrack -u hakanbey -w 400 ./123wordlist.txt
+password is: 123adanasubaru
 ```
 
 The next step is to find out what /usr/bin/binary does, but that is a task for
 next time.
+
+# Day 4
+## Gain root
+### /usr/bin/binary
+Let's see if we can crack what /usr/bin/binary is doing.
+
+A few interesting strings can be found:
+```
+hakanbey@ubuntu:~$ strings /usr/bin/binary
+...
+I think you should enter the correct string here ==>
+/root/hint.txt
+Hint! : %s
+/root/root.jpg
+Unable to open source!
+/home/hakanbey/root.jpg
+Copy /root/root.jpg ==> /home/hakanbey/root.jpg
+Unable to copy!
+...
+```
+
+The ltrace output also gives a bit of a clue:
+```
+hakanbey@ubuntu:~$ ltrace /usr/bin/binary
+strcat("war", "zone")                                                                                                                                                         = "warzone"
+strcat("warzone", "in")                                                                                                                                                       = "warzonein"
+strcat("warzonein", "ada")                                                                                                                                                    = "warzoneinada"
+strcat("warzoneinada", "na")                                                                                                                                                  = "warzoneinadana"
+printf("I think you should enter the cor"...)                                                                                                                                 = 52
+__isoc99_scanf(0x565141720edd, 0x7ffeb3552d80, 0, 0I think you should enter the correct string here ==>warzoneinadana
+)                                                                                                                          = 1
+strcmp("warzoneinadana", "warzoneinadana")                                                                                                                                    = 0
+fopen("/root/hint.txt", "r")                                                                                                                                                  = 0
+__isoc99_fscanf(0, 0x565141720edd, 0x7ffeb3552da0, 1 <no return ...>
+--- SIGSEGV (Segmentation fault) ---
++++ killed by SIGSEGV +++
+
+```
+My guess is that the strcat() calls assembles the password "warzoneinadana",
+and if the password is correct, /root/hint.txt is used in some way.
+
+If we run /usr/bin/binary and enter warzoneinadana:
+```
+hakanbey@ubuntu:~$ /usr/bin/binary
+I think you should enter the correct string here ==>warzoneinadana
+Hint! : Hexeditor 00000020 ==> ???? ==> /home/hakanbey/Desktop/root.jpg (CyberChef)
+
+Copy /root/root.jpg ==> /home/hakanbey/root.jpg
+```
+
+And now we have a root.jpg in our home directory:
+```
+hakanbey@ubuntu:~$ file root.jpg
+root.jpg: JPEG image data, JFIF standard 1.01, resolution (DPI), density 96x96, segment length 16, Exif Standard: [], baseline, precision 8, 320x488, frames 3
+```
+
+/usr/bin/binary gives us a hint. Let's hexdump the image and look at "line"
+00000020.
+
+On this step I was quite tripped up by hexdump, which is the tool I initially
+used. The problem is that the output order of hexdump is different from that
+what you would expect.
+```
+hakanbey@ubuntu:~$ hexdump root.jpg|grep 0000020
+0000020 e9fe 3d9d 1879 fc5f 6d82 1cdf ac69 75c2
+```
+Comparing it to xxd:
+```
+hakanbey@ubuntu:~$ xxd root.jpg|grep "00000020"
+00000020: fee9 9d3d 7918 5ffc 826d df1c 69ac c275  ...=y._..m..i..u
+```
+
+This is because the default output format for hexdump respects
+the endianness of the system. In our case this is Little
+Endian (since we are on a x86_64 system)
+
+Adding the ```-C``` flag to hexdump change the output format to the canonical
+format used by e.g. xxd:
+```
+hakanbey@ubuntu:~$ hexdump -C root.jpg|grep 00000020
+00000020  fe e9 9d 3d 79 18 5f fc  82 6d df 1c 69 ac c2 75  |...=y._..m..i..u|
+```
+
+Knowing this, we can move on to the decoding in CyberChef, which according to
+the rooms hint should be HEX to base85, which yeilds the result:
+```
+root:Go0odJo0BbBro0o
+```
+
+We can use those credentials to login to root:
+```
+hakanbey@ubuntu:~$ su root
+Password:
+root@ubuntu:/home/hakanbey# id
+uid=0(root) gid=0(root) groups=0(root)
+```
+
+### lxd
+One thing I noted a few days ago is that hakanbey is a member of ```lxd```:
+```
+hakanbey@ubuntu:~$ groups
+hakanbey adm cdrom dip plugdev lxd
+```
+But unfortunately, there is no lxc/lxd binary:
+```
+hakanbey@ubuntu:~$ find / -name lxc 2>/dev/null
+/etc/apparmor.d/abstractions/lxc
+/etc/apparmor.d/lxc
+hakanbey@ubuntu:~$ find / -name lxd 2>/dev/null
+/var/lib/lxd
+/etc/logrotate.d/lxd
+/etc/dnsmasq.d-available/lxd
+/etc/init.d/lxd
+```
+So no dice there.
