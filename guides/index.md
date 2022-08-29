@@ -18,7 +18,7 @@ $ nmap -sV -sC $IP
 ```
 # Use -fs to filter on response size
 # -fc to filter on response code
-$ ffuf -w /usr/share/seclists/Discovery/Web-Content/big.txt -H "Host: FUZZ.adana.thm" -fs FILTER -u http://adana.thm
+$ ffuf -w /usr/share/seclists/Discovery/Web-Content/big.txt -H "Host: FUZZ.domain.thm" -fs FILTER -u http://domain.thm
 
 # File extension:
 $ ffuf -w wordlist.txt -u http://server.thm/FUZZ -e .jpg,.png
