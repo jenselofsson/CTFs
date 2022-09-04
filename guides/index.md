@@ -25,6 +25,13 @@ $ ffuf -w wordlist.txt -u http://server.thm/FUZZ -e .jpg,.png
 ```
 
 #### gobuster
+Basic enumeration:
+```
+$ gobuster -z --no-error dir -u http://$IP/ -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt
+```
+
+
+
 
 #### find
 ```
