@@ -14,13 +14,16 @@ $ nmap -sV -sC $IP
 
 ### Enumeration
 #### ffuf
+Add ```-o filename.txt``` to output to a file, and stdout.
 ##### Subdomain enumeration
 ```
 # Use -fs to filter on response size
 # -fc to filter on response code
 $ ffuf -w /usr/share/seclists/Discovery/Web-Content/big.txt -H "Host: FUZZ.domain.thm" -fs FILTER -u http://domain.thm
+```
 
-# File extension:
+##### File extension:
+```
 $ ffuf -w wordlist.txt -u http://server.thm/FUZZ -e .jpg,.png
 ```
 
@@ -31,7 +34,7 @@ $ gobuster -z --no-error dir -u http://$IP/ -w /usr/share/seclists/Discovery/Web
 ```
 
 
-
+#### wpscan
 
 #### find
 ```
