@@ -50,3 +50,19 @@ $ find / -group groupname -type -f -exec ls -lh {} \; 2>/dev/null
 # Find files owned by a user
 $ find / -user username -type f -exec ls -lh {} \; 2>/dev/null
 ```
+
+## Transfer files from attack box to target
+### http
+```
+$ python3 -m http.server
+```
+
+### FTP
+```
+$ python3 -m pyftpdlib
+```
+
+## Priv Esc
+## setcap
+If setcap has suid bit:
+https://book.hacktricks.xyz/linux-hardening/privilege-escalation/linux-capabilities#privesc-container-escape
