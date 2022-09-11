@@ -63,6 +63,20 @@ $ python3 -m pyftpdlib
 ```
 
 ## Priv Esc
-## setcap
+### setcap
 If setcap has suid bit:
 https://book.hacktricks.xyz/linux-hardening/privilege-escalation/linux-capabilities#privesc-container-escape
+
+# Brute forcing
+## hashcat
+Cracking htpasswd:
+```
+$ hashcat --force -m 1600 hash.txt /usr/share/wordlists/rockyou.txt # 1600 for md5apr1 has
+```
+
+## johntheripper
+
+## hydra
+```
+$ hydra -l user -P wordlist.txt <IP or HOSTNAME> -t 4 ssh # -t 4 for 4 threads
+```
