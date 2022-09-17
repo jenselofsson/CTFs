@@ -154,10 +154,10 @@ With big.txt we find an additional directory:
 
 
 #### Port 10000:
+```
 $ gobuster dir -u https://$IP:10000/ -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -k --exclude-length 4629 -q --no-error --no-progress
 
 ```
-
 ## .info.txt:
 Content of .info.txt:
 ```
