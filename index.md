@@ -1,6 +1,4 @@
 ---
-layout: post
+layout: home
 title: Test title please ignore
 ---
-
-Lorem ipsum
