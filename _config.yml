@@ -1,3 +1,7 @@
 theme: minima
 title: Mooseplace
 description: Place for stuff
+
+mastodon:
+ - username: cellularmoose
+   instance: fosstodon.org
