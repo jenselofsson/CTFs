@@ -67,7 +67,7 @@ and decode this using pen-and-paper, but luckily there are protocol analyzers
 available in the Logic2 software that can do the job for us. All we need to do
 is to figure out the correct settings.
 
-Looking in the right hand menu we find an analyzer labelled "Async Serial".
+Looking in the right hand menu we find an analyzer labelled "[Async Serial](https://support.saleae.com/protocol-analyzers/analyzer-user-guides/using-async-serial)".
 
 Adding this analyzer opens up a settings menu. If you ever worked with serial
 interfaces before (for example on Arduino boards) you will recognize most of
